@@ -14,7 +14,7 @@ library only.
   python3 scripts/ark.py cost                  # spend so far
 
 Environment:
-  ARK_PROVIDER          "302" (default) or "ark"
+  ARK_PROVIDER          "ark" (default) or "302"
   ARK_API_KEY           optional when the key is stored as a Network secret for
                         the provider's host (the proxy adds the header)
   ARK_IMAGE_MODEL       Seedream model id
@@ -60,7 +60,7 @@ PROVIDERS = {
         "video_fast": "doubao-seedance-2-0-mini-260615",
     },
 }
-PROVIDER = PROVIDERS[os.environ.get("ARK_PROVIDER", "302")]
+PROVIDER = PROVIDERS[os.environ.get("ARK_PROVIDER", "ark")]
 IMAGE_MODEL = os.environ.get("ARK_IMAGE_MODEL", "doubao-seedream-5-0-pro-260628")
 VIDEO_MODEL = os.environ.get("ARK_VIDEO_MODEL", "doubao-seedance-2-0-260128")
 VIDEO_MODEL_FAST = os.environ.get("ARK_VIDEO_MODEL_FAST", PROVIDER["video_fast"])
