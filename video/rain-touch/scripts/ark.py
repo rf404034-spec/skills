@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Volcengine Ark client for the "rain-touch" short.
+"""Seedream / Seedance client for the "rain-touch" short.
 
 Generates keyframes with Seedream and clips with Seedance, using prompts
-from ../shots.json. Standard library only.
+from ../shots.json, through Volcengine Ark or the 302.ai relay. Standard
+library only.
 
   python3 scripts/ark.py image k -n 4          # character sheet variants
   python3 scripts/ark.py approve k output/images/k_2.png
@@ -13,12 +14,12 @@ from ../shots.json. Standard library only.
   python3 scripts/ark.py cost                  # spend so far
 
 Environment:
+  ARK_PROVIDER          "302" (default) or "ark"
   ARK_API_KEY           optional when the key is stored as a Network secret for
-                        ark.cn-beijing.volces.com (the proxy adds the header)
-  ARK_IMAGE_MODEL       Seedream model / endpoint id (default below)
-  ARK_VIDEO_MODEL       Seedance 2.0 model / endpoint id (required for video)
-  ARK_VIDEO_MODEL_FAST  Seedance 2.0 Mini model / endpoint id (for --fast)
-  ARK_BASE_URL          default https://ark.cn-beijing.volces.com/api/v3
+                        the provider's host (the proxy adds the header)
+  ARK_IMAGE_MODEL       Seedream model id
+  ARK_VIDEO_MODEL       Seedance model id for final clips
+  ARK_VIDEO_MODEL_FAST  Seedance model id for --fast drafts
 """
 
 import argparse
@@ -38,13 +39,31 @@ OUT = ROOT / "output"
 APPROVED = OUT / "approved"
 LOG = OUT / "log.jsonl"
 
-BASE_URL = os.environ.get("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
+# Prices are for the spend log only: per image, and per 1M video tokens.
+PROVIDERS = {
+    "302": {
+        "images": "https://api.302.ai/doubao/images/generations",
+        "tasks": "https://api.302.ai/volcengine/api/v3/contents/generations/tasks",
+        "currency": "USD",
+        "price_image": 0.043,
+        "price_video": 7.884,
+        "price_video_fast": 6.516,
+        "video_fast": "doubao-seedance-2-0-fast-260128",
+    },
+    "ark": {
+        "images": "https://ark.cn-beijing.volces.com/api/v3/images/generations",
+        "tasks": "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
+        "currency": "RMB",
+        "price_image": 0.25,
+        "price_video": 46,
+        "price_video_fast": 23,
+        "video_fast": "doubao-seedance-2-0-mini-260615",
+    },
+}
+PROVIDER = PROVIDERS[os.environ.get("ARK_PROVIDER", "302")]
 IMAGE_MODEL = os.environ.get("ARK_IMAGE_MODEL", "doubao-seedream-5-0-pro-260628")
-
-# Rough RMB prices for the spend log; check the Ark console for real ones.
-PRICE_IMAGE = float(os.environ.get("ARK_PRICE_IMAGE", "0.25"))  # per image
-PRICE_VIDEO = float(os.environ.get("ARK_PRICE_VIDEO", "46"))  # per 1M tokens
-PRICE_VIDEO_FAST = float(os.environ.get("ARK_PRICE_VIDEO_FAST", "23"))
+VIDEO_MODEL = os.environ.get("ARK_VIDEO_MODEL", "doubao-seedance-2-0-260128")
+VIDEO_MODEL_FAST = os.environ.get("ARK_VIDEO_MODEL_FAST", PROVIDER["video_fast"])
 
 
 def load_spec():
@@ -81,13 +100,13 @@ def approved_path(target):
     sys.exit(f"{target} has no approved image yet: run `ark.py approve {target} <file>`")
 
 
-def api(method, path, body=None):
+def api(method, url, body=None):
     headers = {"Content-Type": "application/json"}
     key = os.environ.get("ARK_API_KEY")
     if key:
         headers["Authorization"] = f"Bearer {key}"
     req = urllib.request.Request(
-        f"{BASE_URL}{path}",
+        url,
         method=method,
         data=json.dumps(body).encode() if body is not None else None,
         headers=headers,
@@ -140,9 +159,9 @@ def cmd_image(args):
         print(redact(body))
         return
     for i in range(1, args.n + 1):
-        res = api("POST", "/images/generations", body)
+        res = api("POST", PROVIDER["images"], body)
         dest = download(res["data"][0]["url"], OUT / "images" / f"{args.target}_{int(time.time())}_{i}.png")
-        log({"kind": "image", "target": args.target, "file": str(dest.relative_to(ROOT)), "cost_rmb": PRICE_IMAGE})
+        log({"kind": "image", "target": args.target, "file": str(dest.relative_to(ROOT)), "cost": PROVIDER["price_image"]})
         print(dest)
 
 
@@ -159,29 +178,27 @@ def cmd_approve(args):
 def cmd_video(args):
     spec = load_spec()
     shot = find_target(spec, args.target)
-    model = os.environ.get("ARK_VIDEO_MODEL_FAST" if args.fast else "ARK_VIDEO_MODEL")
-    if not model and not args.dry_run:
-        sys.exit("set ARK_VIDEO_MODEL / ARK_VIDEO_MODEL_FAST to the model or endpoint id from the Ark console")
-    duration = args.duration or max(4, shot["duration"])
-    text = (
-        f"{shot['video_prompt']} --resolution {args.resolution} --duration {duration}"
-        f" --ratio adaptive --watermark false"
-    )
+    model = VIDEO_MODEL_FAST if args.fast else VIDEO_MODEL
     body = {
-        "model": model or "<ARK_VIDEO_MODEL>",
+        "model": model,
         "content": [
-            {"type": "text", "text": text},
+            {"type": "text", "text": shot["video_prompt"]},
             {"type": "image_url", "image_url": {"url": data_uri(approved_path(args.target))}, "role": "first_frame"},
         ],
+        "resolution": args.resolution,
+        "duration": args.duration or max(4, shot["duration"]),
+        "ratio": "adaptive",
+        "generate_audio": args.audio,
+        "watermark": False,
     }
     if args.dry_run:
         print(redact(body))
         return
-    task = api("POST", "/contents/generations/tasks", body)
+    task = api("POST", PROVIDER["tasks"], body)
     print(f"task {task['id']} submitted, waiting...")
     while True:
         time.sleep(10)
-        res = api("GET", f"/contents/generations/tasks/{task['id']}")
+        res = api("GET", f"{PROVIDER['tasks']}/{task['id']}")
         if res["status"] in ("succeeded", "failed", "cancelled", "expired"):
             break
         print(f"  {res['status']}")
@@ -190,9 +207,9 @@ def cmd_video(args):
     tag = "fast" if args.fast else "final"
     dest = download(res["content"]["video_url"], OUT / "videos" / f"{args.target}_{tag}_{int(time.time())}.mp4")
     tokens = (res.get("usage") or {}).get("total_tokens", 0)
-    cost = tokens / 1e6 * (PRICE_VIDEO_FAST if args.fast else PRICE_VIDEO)
-    log({"kind": "video", "target": args.target, "file": str(dest.relative_to(ROOT)), "tokens": tokens, "cost_rmb": cost})
-    print(f"{dest}  ({tokens} tokens, ~{cost:.2f} RMB)")
+    cost = tokens / 1e6 * PROVIDER["price_video_fast" if args.fast else "price_video"]
+    log({"kind": "video", "target": args.target, "file": str(dest.relative_to(ROOT)), "tokens": tokens, "cost": cost})
+    print(f"{dest}  ({tokens} tokens, ~{cost:.3f} {PROVIDER['currency']})")
 
 
 def cmd_cost(_args):
@@ -202,9 +219,8 @@ def cmd_cost(_args):
     entries = [json.loads(line) for line in LOG.read_text(encoding="utf-8").splitlines() if line]
     for kind in ("image", "video"):
         rows = [e for e in entries if e["kind"] == kind]
-        print(f"{kind}: {len(rows)} generated, ~{sum(e['cost_rmb'] for e in rows):.2f} RMB")
-    total = sum(e["cost_rmb"] for e in entries)
-    print(f"total: ~{total:.2f} RMB (~{total * 4.4:.0f} TWD)")
+        print(f"{kind}: {len(rows)} generated, ~{sum(e['cost'] for e in rows):.3f} {PROVIDER['currency']}")
+    print(f"total: ~{sum(e['cost'] for e in entries):.3f} {PROVIDER['currency']}")
 
 
 def main():
@@ -226,7 +242,8 @@ def main():
     s.add_argument("target")
     s.add_argument("--fast", action="store_true", help="use the cheaper draft model")
     s.add_argument("--duration", type=int)
-    s.add_argument("--resolution", default="1080p")
+    s.add_argument("--resolution", default="720p", help="480p or 720p (Seedance 2.0 has no 1080p)")
+    s.add_argument("--audio", action="store_true", help="let Seedance generate sound too")
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(func=cmd_video)
 

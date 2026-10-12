@@ -55,11 +55,11 @@ K 站在巨大的落地窗前發呆，窗外下著雨。一個全息虛影在房
 
 這樣請求會自動帶上金鑰，腳本不需要 `ARK_API_KEY`。模型 ID 不是秘密，可以設成環境變數，也可以直接在對話裡告訴 Claude：
 
-| 變數                   | 內容                                                        |
-| ---------------------- | ----------------------------------------------------------- |
-| `ARK_API_KEY`          | 方舟 API Key（用 Network secret 時不用填）                  |
-| `ARK_VIDEO_MODEL`      | Seedance 2.0 的模型 ID 或接入點 ID                          |
-| `ARK_VIDEO_MODEL_FAST` | Seedance 2.0 Mini 的模型 ID 或接入點 ID                     |
+| 變數                   | 內容                                                            |
+| ---------------------- | --------------------------------------------------------------- |
+| `ARK_API_KEY`          | 方舟 API Key（用 Network secret 時不用填）                      |
+| `ARK_VIDEO_MODEL`      | Seedance 2.0 的模型 ID 或接入點 ID                              |
+| `ARK_VIDEO_MODEL_FAST` | Seedance 2.0 Mini 的模型 ID 或接入點 ID                         |
 | `ARK_IMAGE_MODEL`      | Seedream 的模型 ID（不填就用 `doubao-seedream-5-0-pro-260628`） |
 
 設定好之後開一個新對話，告訴 Claude「繼續做 `video/rain-touch`，從第 2 步開始」。
