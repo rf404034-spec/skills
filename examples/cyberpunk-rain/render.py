@@ -156,14 +156,14 @@ def hologram_ad(width):
 # Characters
 # ----------------------------------------------------------------------------
 
-def ik(sh, target, l1, l2):
-    """Two-bone IK; returns the elbow, bending downward/outward."""
+def ik(sh, target, l1, l2, forward=False):
+    """Two-bone IK; returns the elbow (bending down/outward) or knee (forward)."""
     dx, dy = target[0] - sh[0], target[1] - sh[1]
     d = min(math.hypot(dx, dy), l1 + l2 - 0.01)
     base = math.atan2(dy, dx)
     alpha = math.acos(max(-1.0, min(1.0, (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d))))
     cands = [(sh[0] + l1 * math.cos(base + k * alpha), sh[1] + l1 * math.sin(base + k * alpha)) for k in (1, -1)]
-    return max(cands, key=lambda p: p[1] + 0.3 * p[0])
+    return max(cands, key=(lambda p: p[0]) if forward else (lambda p: p[1] + 0.3 * p[0]))
 
 
 def umbrella_geom(hand, lift, opened):
@@ -204,42 +204,99 @@ def rot(pts, pivot, ang):
             for x, y in pts]
 
 
-def detective_shapes(fx, fy, phase, amp):
-    """Long coat, collar up, seen 3/4 from behind; walk cycle via phase/amp.
+def foot_target(p, D, amp, lift_h, rest_dx, beta=0.62):
+    """Foot position relative to the hip for gait phase p (0..1).
 
-    Returns world-space shapes: ("poly", pts) | ("ell", (cx, cy, rx, ry))."""
-    fy = fy - 2.5 * amp * abs(math.sin(phase))
-    sway = 4 * amp * math.sin(phase)
-    P = lambda pts: [(fx + x + (sway * (y + 60) / 30 if y > -60 else 0), fy + y) for x, y in pts]
-    coat = P([(-30, -228), (-46, -214), (-50, -150), (-52, -60), (-56, -38), (-20, -34),
-              (-14, -40), (14, -40), (22, -34), (54, -38), (50, -70), (48, -150), (44, -214), (28, -228)])
-    collar = P([(-26, -236), (-30, -222), (26, -222), (22, -240), (12, -246), (-14, -246)])
-    swing = 0.38 * amp * math.sin(phase)
-    legs = [rot([(fx + a, fy + b) for a, b in [(-20, -40), (-6, -40), (-6, 0), (-22, 0)]], (fx - 13, fy - 40), swing),
-            rot([(fx + a, fy + b) for a, b in [(6, -40), (20, -40), (22, 0), (6, 0)]], (fx + 13, fy - 40), -swing)]
-    shapes = [("poly", coat), ("poly", collar)] + [("poly", leg) for leg in legs]
-    shapes.append(("ell", (fx, fy - 253, 14, 17)))
+    Stance (0..beta): the foot is planted, sliding back relative to the hip at
+    exactly the body's speed, so it never skates on the ground. Swing: the foot
+    lifts and eases forward to the next heel strike."""
+    p %= 1.0
+    if p < beta:
+        x, y = D * beta / 2 - D * p, 0.0
+    else:
+        q = (p - beta) / (1 - beta)
+        e = 0.5 - 0.5 * math.cos(math.pi * q)
+        x, y = -D * beta / 2 + D * beta * e, -lift_h * math.sin(math.pi * q) ** 1.3
+    return amp * x + (1 - amp) * rest_dx, amp * y
+
+
+def leg_shapes(hip, foot_rel, l1, l2, w1, w2, shoe):
+    """Thigh + shin via IK (knee bends forward) and a small shoe."""
+    foot = (hip[0] + foot_rel[0], hip[1] + foot_rel[1])
+    knee = ik(hip, foot, l1, l2, forward=True)
+    heel, toe, hgt = shoe
+    sole = [(foot[0] + heel, foot[1]), (foot[0] + toe, foot[1]), (foot[0] + toe - 2, foot[1] - hgt),
+            (foot[0] + heel + 1, foot[1] - hgt - 2)]
+    return [("line", [hip, knee], w1), ("line", [knee, foot], w2), ("poly", sole)]
+
+
+def body_bob(c, amp, h):
+    """Highest at mid-stance of each leg, lowest at double support."""
+    return h * amp * 0.5 * (1 + math.cos(4 * math.pi * (c - 0.31)))
+
+
+def detective_shapes(fx, fy, c, amp):
+    """Long coat, collar up, seen 3/4 from behind, walking right.
+
+    fx is the pelvis x; c is the gait cycle (0..1 per two steps).
+    Returns world-space shapes: ("poly", pts) | ("ell", ...) | ("line", pts, width)."""
+    D = 2 * STEP
+    up = body_bob(c, amp, 3.0)
+    hip_y = fy - 108 - up
+    shapes = []
+    rels = []
+    for k, (side, off) in enumerate(((-6, 0.0), (6, 0.5))):  # far leg first
+        rel = foot_target(c + off, D, amp, 12, side * 0.6)
+        rels.append(rel[0])
+        shapes += leg_shapes((fx + side, hip_y), (rel[0], fy - hip_y + rel[1]), 57, 55, 15, 12, (-6, 14, 7))
+    lean = 0.05 * amp + 0.012 * amp * math.sin(4 * math.pi * c)
+    pivot = (fx, hip_y)
+    lag = math.sin(2 * math.pi * c - 1.1) * amp  # hem trails the stride
+    back, front = min(rels), max(rels)
+    hem_l, hem_r = -56 + 0.35 * back * amp - 3 * amp + 2 * lag, 54 + 0.3 * front * amp + 2 * lag
+    by = lambda y: hip_y + 108 + y  # body coords relative to standing feet
+    coat = [(fx - 30, by(-228)), (fx - 46, by(-214)), (fx - 50, by(-150)), (fx - 52 - 2 * amp, by(-70)),
+            (fx + hem_l, by(-40)), (fx - 18 + lag, by(-35)), (fx + 18 + lag, by(-35)),
+            (fx + hem_r, by(-40)), (fx + 50, by(-70)), (fx + 48, by(-150)), (fx + 44, by(-214)), (fx + 28, by(-228))]
+    collar = [(fx - 26, by(-236)), (fx - 30, by(-222)), (fx + 26, by(-222)), (fx + 22, by(-240)), (fx + 12, by(-246)),
+              (fx - 14, by(-246))]
+    shapes += [("poly", rot(coat, pivot, lean)), ("poly", rot(collar, pivot, lean * 1.1))]
+    hx, hy = rot([(fx + 1, by(-253))], pivot, lean * 1.15)[0]
+    shapes.append(("ell", (hx + 1.5 * amp * math.sin(4 * math.pi * c - 2), hy, 14, 17)))
     return shapes
 
 
-def companion_shapes(fx, fy, phase, amp, elbow, hand, s):
-    """Holographic companion facing right/left in profile; front arm in world coords."""
-    fy = fy - 2 * amp * abs(math.sin(phase))
-    P = lambda pts: [(fx + x * s, fy + y * s) for x, y in pts]
-    sway = 3 * amp * math.sin(phase)
-    shapes = [
-        ("ell", (fx, fy - 237 * s, 12 * s, 15 * s)),
-        ("poly", P([(-15, -244), (-13, -256), (0, -260), (14, -254), (16, -232), (10, -226), (8, -244)])),
+def companion_shapes(fx, fy, c, amp, elbow, hand, s, arm_up):
+    """Holographic companion in profile, walking right; front arm in world coords."""
+    D = 2 * STEP
+    up = body_bob(c, amp, 2.4) * s
+    hip_y = fy - 112 * s - up
+    shapes = []
+    for side, off in ((-4, 0.5), (4, 0.0)):
+        rel = foot_target(c + off, D, amp, 8 * s, side * 0.5)
+        shapes += leg_shapes((fx + side * s, hip_y), (rel[0], fy - hip_y + rel[1]), 57 * s, 56 * s, 9 * s, 7 * s,
+                             (-3 * s, 10 * s, 5 * s))
+    lean = 0.04 * amp
+    pivot = (fx, hip_y)
+    P = lambda pts: rot([(fx + x * s, hip_y + (y + 112) * s) for x, y in pts], pivot, lean)
+    lag = 4 * amp * math.sin(2 * math.pi * c - 1.2)
+    hair_b = 1.5 * amp * math.sin(4 * math.pi * c - 2.2)
+    shapes += [
+        ("ell", (*P([(0, -237)])[0], 12 * s, 15 * s)),
+        ("poly", P([(-15, -244), (-13, -256), (0, -260), (14, -254), (16, -232 + hair_b), (10, -226 + hair_b), (8, -244)])),
         ("poly", P([(-5, -224), (5, -224), (6, -212), (-6, -212)])),
-        ("poly", P([(-22, -212), (22, -212), (18, -150), (14, -120), (30 + sway, -40), (-30 + sway, -40), (-14, -120), (-18, -150)])),
+        ("poly", P([(-22, -212), (22, -212), (18, -150), (14, -120), (28 + lag, -42), (6 + lag * 0.5, -38),
+                    (-6 + lag * 0.5, -38), (-28 + lag, -42), (-14, -120), (-18, -150)])),
     ]
-    swing = 0.42 * amp * math.sin(phase)
-    for leg, piv, sg in (([(-14, -42), (-4, -42), (-6, 0), (-13, 0)], (-9, -42), swing),
-                         ([(4, -42), (14, -42), (13, 0), (6, 0)], (9, -42), -swing)):
-        shapes.append(("poly", rot(P(leg), P([piv])[0], sg)))
-    bsw = 8 * amp * math.sin(phase + math.pi)
-    shapes.append(("line", P([(18, -206), (24 + bsw * 0.5, -150), (20 + bsw, -110)]), 7 * s))
-    sh = (fx - 18 * s, fy - 206 * s)
+    # free arm swings opposite the near leg, elbow bending as it comes forward
+    sw = amp * math.sin(2 * math.pi * c + math.pi)
+    shp = P([(16, -206)])[0]
+    a1 = 0.24 * sw
+    el = (shp[0] + 46 * s * math.sin(a1), shp[1] + 46 * s * math.cos(a1))
+    a2 = a1 + 0.1 + 0.22 * max(0.0, sw) * amp
+    hd = (el[0] + 42 * s * math.sin(a2), el[1] + 42 * s * math.cos(a2))
+    shapes.append(("line", [shp, el, hd], 7 * s))
+    sh = P([(-18, -206)])[0]
     shapes.append(("line", [sh, elbow, hand], 7 * s))
     shapes.append(("ell", (hand[0], hand[1], 5 * s, 5 * s)))
     return shapes
@@ -249,23 +306,23 @@ def companion_shapes(fx, fy, phase, amp, elbow, hand, s):
 # Choreography: walking, camera moves and cuts
 # ----------------------------------------------------------------------------
 
-V_WALK = 36.0  # px/s
-STRIDE = 42.0  # px per half cycle
+V_WALK = 72.0  # px/s: a slow, heavy stroll
+STEP = 56.0  # px per step -> ~1.3 steps/s
+X0 = 70.0
 
 
 def walk_speed(t):
-    return V_WALK * (1 - smooth(5.8, 7.0, t)) + V_WALK * 0.85 * smooth(19.2, 20.4, t)
+    return V_WALK * (1 - smooth(5.6, 7.0, t)) + V_WALK * 0.85 * smooth(19.2, 20.6, t)
 
 
 _TG = np.arange(0, DUR + 1, 1 / 240)
-_XG = 290 + np.cumsum([walk_speed(x) for x in _TG]) / 240
+_XG = X0 + np.cumsum([walk_speed(x) for x in _TG]) / 240
 
 
 def motion(t):
-    """K's world x, walk phase and walk amplitude at time t."""
+    """K's world x, gait cycle (0..1 per two steps) and walk amplitude at t."""
     x = float(np.interp(t, _TG, _XG))
-    phase = (x - 290) / STRIDE * math.pi
-    return x, phase, min(1.0, walk_speed(t) / V_WALK * 1.3)
+    return x, (x - X0) / (2 * STEP), min(1.0, walk_speed(t) / V_WALK * 1.25)
 
 
 def camera(t):
@@ -273,14 +330,16 @@ def camera(t):
     kx, _, _ = motion(t)
     fy = HORIZON + 46
     pair = kx + 60
-    if t < 6.5:  # wide establishing, gentle push, following the walk
-        z = 1.0 + 0.1 * smooth(0, 6.5, t)
-        cx, cy = 640 + (pair - 640) * 0.3, 380
+    if t < 6.5:  # wide establishing, then ease into a full-body tracking shot of the walk
+        u = smooth(2.5, 6.5, t)
+        z = 1.0 + 0.4 * u
+        cx = 640 + (pair - 640) * (0.3 + 0.7 * u)
+        cy = 380 + (fy - 150 - 380) * u
     elif t < 12.8:  # push in to a medium two-shot while she raises the umbrella
         u = smooth(6.5, 10.5, t)
-        z = 1.1 + 0.75 * u
-        cx = 640 + (pair - 640) * 0.3 + (pair - 640 - (pair - 640) * 0.3) * u
-        cy = 380 + (fy - 175 - 380) * u
+        z = 1.4 + 0.45 * u
+        cx = pair
+        cy = fy - 150 - 25 * u
     elif t < 15.6:  # cut: close-up on him under the umbrella
         u = (t - 12.8) / 2.8
         z = 2.7 + 0.2 * u
@@ -290,10 +349,10 @@ def camera(t):
         z = 3.0 + 0.25 * u
         cx, cy = kx + 118 + 5 * u, fy - 218
     else:  # cut: medium, then a long pull back to wide as they walk away
-        u = smooth(19.0, 25.5, t)
-        z = 1.9 - 0.9 * u
+        u = smooth(19.5, 26.0, t)
+        z = 1.5 - 0.5 * u
         cx = pair + (640 - pair) * u
-        cy = fy - 180 + (380 - (fy - 180)) * u
+        cy = fy - 160 + (380 - (fy - 160)) * u
     # subtle handheld drift
     cx += 2.0 * math.sin(t * 0.9) * z
     cy += 1.2 * math.sin(t * 1.3 + 1) * z
@@ -413,18 +472,19 @@ class Scene:
         img = np.asarray(bg, dtype=np.float32) / 255.0
 
         # choreography
-        kx, phase, amp = motion(t)
+        kx, cyc, amp = motion(t)
         fy = HORIZON + 46
         cs = 0.92
         comp_x = kx + 122  # she walks/stands outside the umbrella, in the rain
         holo_col = np.array([0.55, 0.45, 1.0]) * (0.5 + 0.5 * math.sin(t * 0.8)) + np.array([0.2, 0.85, 1.0]) * (0.5 - 0.5 * math.sin(t * 0.8))
         lift = smooth(8.3, 10.8, t)
         opened = smooth(10.8, 12.3, t)
-        hphase = phase + 0.9
-        hbob = 2 * amp * abs(math.sin(hphase))
-        sh = (comp_x - 18 * cs, fy + 4 - hbob - 206 * cs)
-        down = (sh[0] - 4 + 6 * amp * math.sin(hphase) * (1 - lift), sh[1] + 86)
-        up = (kx + 46, fy - 254 + 2 * math.sin(t * 1.3) - 2.5 * amp * abs(math.sin(phase)))
+        hcyc = cyc + 0.27  # she falls into step slightly out of phase with him
+        sh = rot([(comp_x - 18 * cs, fy + 4 - 206 * cs - body_bob(hcyc, amp, 2.4) * cs)],
+                 (comp_x, fy + 4 - 112 * cs), 0.04 * amp)[0]
+        carry = 0.18 * amp * math.sin(2 * math.pi * hcyc) * (1 - lift)  # closed umbrella swings a little
+        down = (sh[0] - 4 + 80 * math.sin(carry), sh[1] + 86 * math.cos(carry))
+        up = (kx + 46, fy - 254 + 2 * math.sin(t * 1.3) - body_bob(cyc, amp, 3.0))
         hand = (down[0] + (up[0] - down[0]) * lift, down[1] + (up[1] - down[1]) * lift - 40 * math.sin(math.pi * lift))
         elbow = ik(sh, hand, 48 * cs + 4, 46 * cs + 4)
         canopy, grip, apex, tips, (rimL, rimR) = umbrella_geom(hand, lift, opened)
@@ -435,7 +495,7 @@ class Scene:
         hs = int(round(to_s((0, HORIZON))[1]))  # screen row of the rooftop edge
 
         # him
-        km = raster(detective_shapes(kx, fy, phase, amp))
+        km = raster(detective_shapes(kx, fy, cyc, amp))
         kmask = np.asarray(km, dtype=np.float32)[..., None] / 255.0
         kedge = np.asarray(km.filter(ImageFilter.FIND_EDGES), dtype=np.float32)[..., None] / 255.0
         side = (self.xx - kx_s)[..., None]
@@ -490,7 +550,7 @@ class Scene:
         drip_a = np.asarray(drip.filter(ImageFilter.GaussianBlur(0.7)), dtype=np.float32) / 255.0
 
         # her: additive translucent hologram, disturbed wherever rain passes through
-        comp_img = raster(companion_shapes(comp_x, fy + 4, hphase, amp, elbow, hand, cs))
+        comp_img = raster(companion_shapes(comp_x, fy + 4, hcyc, amp, elbow, hand, cs, lift))
         comp = np.asarray(comp_img, dtype=np.float32) / 255.0
         hit = rain_a * comp
         hit_img = Image.fromarray((np.clip(hit * 255, 0, 255)).astype(np.uint8))
@@ -534,6 +594,8 @@ class Scene:
 
         # wet floor reflection below the rooftop edge (when it is on screen)
         if 0 < hs < H:
+            keep = img[hs:].copy()  # her legs and feet stay crisp over the reflection
+            keep_m = np.clip(comp[hs:] * 1.6 + halo[hs:] * 0.5, 0, 1)[..., None]
             nref = H - hs
             src_rows = np.clip(hs - 1 - (np.arange(nref) / 1.0).astype(int), 0, H - 1)
             k = np.arange(nref)[:, None]
@@ -544,6 +606,7 @@ class Scene:
             refl = np.asarray(refl_img, dtype=np.float32) / 255.0
             fade = np.linspace(0.55, 0.25, nref)[:, None, None]
             img[hs:] = img[hs:] * (1 - fade) + refl * fade + np.array([0.01, 0.012, 0.016])
+            img[hs:] = img[hs:] * (1 - keep_m) + keep * keep_m
             img[hs:] = img[hs:] * (1 - kmask[hs:]) + (figure_col * kmask[hs:] + rim[hs:])
 
         rain_tint = np.array([0.62, 0.72, 0.85]) + light * holo_col * 2.0
@@ -692,7 +755,7 @@ def synth_audio(path):
 
     # wet footsteps synced to the walk cycle
     steps = np.zeros(n)
-    half = np.floor((np.interp(t, _TG, _XG) - 290) / STRIDE)
+    half = np.floor((np.interp(t, _TG, _XG) - X0) / STEP)
     for k in np.where(np.diff(half) > 0)[0]:
         ln = int(0.07 * sr)
         steps[k:k + ln] += np.exp(-np.arange(len(steps[k:k + ln])) / (0.015 * sr)) * rng.uniform(0.7, 1.0)
