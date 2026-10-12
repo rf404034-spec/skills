@@ -1,0 +1,105 @@
+{
+  "title": "雨中的觸碰",
+  "styles": {
+    "interior": "cinematic film still, anamorphic widescreen 21:9, small dim brutalist concrete apartment, warm amber practical lamp light inside, cold teal and magenta neon city glow through the window, rain-streak shadows projected across the walls, light atmospheric haze, muted desaturated tones, 35mm film grain, melancholic, minimalist composition, photorealistic",
+    "exterior": "cinematic film still, anamorphic widescreen 21:9, cold teal and grey palette, dense atmospheric haze, volumetric light, heavy rain, muted desaturated tones, 35mm film grain, dystopian future, photorealistic"
+  },
+  "characters": {
+    "k": {
+      "name": "男主角（K 型原創角色）",
+      "size": "2048x2048",
+      "prompt": "Character reference sheet, front view, side view and back view of the same person, original character, man in his early 30s, short dark blond hair, stoic tired expression, pale skin, wearing a long dark grey trench coat with a shearling collar, dark high-neck sweater, soft cinematic lighting, neutral grey background, photorealistic, not resembling any real actor"
+    },
+    "holo": {
+      "name": "全息虛影（原創角色）",
+      "size": "2048x2048",
+      "prompt": "Character reference sheet, front view, side view and back view of the same person, original character, young woman, short black bob haircut, gentle sad smile, translucent holographic body, soft blue-violet glow, faint horizontal scanlines, slightly see-through, simple white dress, neutral dark background, photorealistic, not resembling any real actress"
+    },
+    "room": {
+      "name": "房間參考（無人）",
+      "size": "3024x1296",
+      "style": "interior",
+      "prompt": "Empty small brutalist concrete apartment at night, one wall is a massive floor-to-ceiling window streaked with rain, blurred megacity neon beyond, worn sofa on the left, small cluttered kitchen counter at the back, low concrete ceiling, single warm amber floor lamp, no people"
+    }
+  },
+  "shots": [
+    {
+      "id": "s01",
+      "duration": 6,
+      "style": "exterior",
+      "refs": [],
+      "image_prompt": "Vast rainy megacity at night, colossal brutalist towers disappearing into fog, giant holographic advertisements in magenta and cyan, distant flying vehicle lights, one small lit window high on a concrete tower, no people",
+      "video_prompt": "Slow dolly forward toward the single lit window on the tower, rain falling, fog drifting, neon signs flickering softly, no people, cinematic"
+    },
+    {
+      "id": "s02",
+      "duration": 6,
+      "style": "interior",
+      "refs": ["k", "room"],
+      "image_prompt": "Wide shot inside the apartment, a lone man in a long dark trench coat stands in silhouette before the massive floor-to-ceiling window, heavy rain on the glass, blurred neon city outside",
+      "video_prompt": "Static shot, the man stands perfectly still, rain streams down the glass, neon lights outside slowly shift, rain shadows flow over the walls"
+    },
+    {
+      "id": "s03",
+      "duration": 5,
+      "style": "interior",
+      "refs": ["k"],
+      "image_prompt": "Close-up side profile of the man staring blankly out of the rainy window, rain-drop shadows rolling down his face, cold neon rim light, warm amber fill light",
+      "video_prompt": "Very slow push in, he blinks once, rain shadows slide down his face, otherwise completely still"
+    },
+    {
+      "id": "s04",
+      "duration": 3,
+      "style": "interior",
+      "refs": ["k", "holo", "room"],
+      "glitch_in": true,
+      "image_prompt": "Medium wide shot from behind the man standing at the window, in the background by the small cluttered kitchen counter a translucent glowing holographic young woman stands, soft blue-violet glow, faint scanlines",
+      "video_prompt": "Static shot, the holographic woman flickers into existence with digital distortion, glitches, then vanishes; the man does not turn around"
+    },
+    {
+      "id": "s05",
+      "duration": 4,
+      "style": "interior",
+      "refs": ["k", "holo"],
+      "glitch_in": true,
+      "image_prompt": "Medium shot, the translucent holographic woman stands beside the man at the rainy window, her fingertips lightly touching his shoulder, he keeps staring outside, her blue-violet glow on his coat",
+      "video_prompt": "Static shot, she slowly reaches out and her fingertips rest on his shoulder, her body faintly flickering, he does not react"
+    },
+    {
+      "id": "s06",
+      "duration": 4,
+      "style": "interior",
+      "refs": [],
+      "image_prompt": "Extreme close-up of a man's hand pressed flat against a cold rain-covered window, a translucent glowing blue-violet hand gently placed over it, the glowing fingers slightly passing through his, blurred neon city beyond",
+      "video_prompt": "Static macro shot, the glowing translucent hand slowly lowers onto his hand and sinks through it with a soft digital shimmer, raindrops run down the glass"
+    },
+    {
+      "id": "s07",
+      "duration": 3,
+      "style": "interior",
+      "refs": ["k", "holo", "room"],
+      "glitch_in": true,
+      "image_prompt": "Wide shot from the back of the room, the man at the window in silhouette, a translucent holographic woman sitting on the worn sofa on the left",
+      "video_prompt": "Static shot, the holographic woman flashes on the sofa for a moment with glitch distortion and disappears, the man remains still"
+    },
+    {
+      "id": "s08",
+      "duration": 5,
+      "style": "interior",
+      "refs": ["k", "holo"],
+      "glitch_in": true,
+      "image_prompt": "Close-up, the holographic woman stands behind the man, her glowing hand caressing his cheek, her blue-violet light illuminating his face, his eyes half closed, tender and melancholic",
+      "video_prompt": "Very slow push in, her hand gently strokes his cheek, he slowly closes his eyes, her glow pulses softly"
+    },
+    {
+      "id": "s09",
+      "duration": 7,
+      "style": "interior",
+      "refs": ["k", "room"],
+      "glitch_in": true,
+      "fade_out": true,
+      "image_prompt": "Wide shot, the man alone in silhouette before the massive rainy floor-to-ceiling window, the room empty and dim, neon city outside",
+      "video_prompt": "Static shot, the man stands alone, rain keeps running down the glass, the room slowly grows darker"
+    }
+  ]
+}
