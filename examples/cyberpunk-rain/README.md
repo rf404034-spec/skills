@@ -2,8 +2,10 @@
 
 A 22s, 1280×720, 24fps procedurally generated video with a synthesized soundtrack:
 a detective in a long coat and his holographic AI companion stand on a wet rooftop
-in a neon megacity at night. It rains, a spinner flies past, a giant hologram ad
-flickers, and she reaches toward his face.
+in a neon megacity at night. It rains, a spinner flies past, and a giant hologram
+ad flickers. She raises an umbrella, opens it and tilts it over him so he stays
+dry, while she stands in the rain herself. Every drop that passes through her
+makes the hologram spark, tear sideways and blink.
 
 - `cyberpunk_rain.mp4`: the rendered video
 - `render.py`: the generator (numpy + Pillow + ffmpeg, no external assets)
