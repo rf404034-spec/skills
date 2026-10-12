@@ -210,7 +210,7 @@ def spinner_shapes(p, s, face, roll):
 # Rain on the window glass (simulated once, snapshot per frame)
 # ----------------------------------------------------------------------------
 
-WIN = (260, 150, 1180, 598)  # window wall in room coords
+WIN = (140, 104, 1300, 642)  # window wall in room coords
 
 
 class GlassRain:
@@ -293,8 +293,13 @@ class GlassRain:
 # ----------------------------------------------------------------------------
 
 RW, RH = 1440, 810
-VPX, VPY = 720, 330
-K_D = 0.565  # depth falloff: scale(1) = window wall
+VPX, VPY = 720, 322
+S1 = (WIN[2] - WIN[0]) / RW  # scale of the window wall
+K_D = 1 / S1 - 1
+FL = (WIN[3] - VPY) / S1  # eye height above the floor (near-plane px)
+CL = (VPY - WIN[1]) / S1
+M = 233.0  # near-plane px per metre
+H_MAN = 1.8 * M
 
 
 def scale_at(D):
@@ -304,11 +309,11 @@ def scale_at(D):
 def fpt(X, D, h=0.0):
     """Room point: lateral X (near-plane px), depth D (0 near .. 1 window), height h (px)."""
     s = scale_at(D)
-    return (VPX + X * s, VPY + (419 - h) * s)
+    return (VPX + X * s, VPY + (FL - h) * s)
 
 
-LAMP_X, LAMP_D = -660, 0.93
-PENDANT_X, PENDANT_D = 450, 0.55
+LAMP_X, LAMP_D = -640, 0.93
+PENDANT_X, PENDANT_D = 470, 0.53
 MAN = dict(X=40.0, D=0.9)
 
 
@@ -322,150 +327,96 @@ def top_face(X0, X1, D0, D1, h):
 
 
 def build_room():
-    """Static plates: walls/floor/ceiling (window left black) and furniture layers (RGBA)."""
+    """Static plates in the umbrella film's palette: a near-black navy room that
+    is mostly window; furniture as dark silhouettes rim-lit by the city."""
     yy, xx = np.mgrid[0:RH, 0:RW].astype(np.float32)
     noise = fbm((RH, RW), 3)
-    rng = np.random.default_rng(11)
-    fine = blur(rng.random((RH, RW)).astype(np.float32), 0.8)
-
-    plate = Image.new("RGB", (RW, RH), (0, 0, 0))
-    d = ImageDraw.Draw(plate)
     wl, wt, wr, wb = WIN
-    ceil = [(0, 0), (RW, 0), (RW, fpt(720, 0)[1] * 0 + 48), (wr, wt), (wl, wt), (0, 48)]
-    floor = [(wl, wb), (wr, wb), (RW, 749), (RW, RH), (0, RH), (0, 749)]
-    lwall = [(0, 48), (wl, wt), (wl, wb), (0, 749)]
-    rwall = [(RW, 48), (wr, wt), (wr, wb), (RW, 749)]
+    near_floor, near_ceil = VPY + FL, VPY - CL
+    ceil = [(0, 0), (RW, 0), (RW, near_ceil), (wr, wt), (wl, wt), (0, near_ceil)]
+    floor = [(wl, wb), (wr, wb), (RW, near_floor), (RW, RH), (0, RH), (0, near_floor)]
+    lwall = [(0, near_ceil), (wl, wt), (wl, wb), (0, near_floor)]
+    rwall = [(RW, near_ceil), (wr, wt), (wr, wb), (RW, near_floor)]
     masks = {}
     for name, poly in (("ceil", ceil), ("floor", floor), ("lwall", lwall), ("rwall", rwall)):
         m = Image.new("L", (RW, RH), 0)
         ImageDraw.Draw(m).polygon(poly, fill=255)
         masks[name] = to_f(m)
-    img = np.zeros((RH, RW, 3), np.float32)
-    conc = (0.75 + 0.35 * noise + 0.12 * (fine - 0.5))[..., None]
-    # concrete walls with formwork lines that converge to the vanishing point
-    lines = np.zeros((RH, RW), np.float32)
-    lg = Image.new("L", (RW, RH), 0)
-    ld = ImageDraw.Draw(lg)
-    for h in range(0, 560, 70):
-        ld.line([fpt(-720, 0, h), fpt(-720, 1, h)], fill=255, width=2)
-        ld.line([fpt(720, 0, h), fpt(720, 1, h)], fill=255, width=2)
-    for Dd in np.linspace(0.1, 0.9, 5):
-        ld.line([fpt(-720, Dd, 0), fpt(-720, Dd, 560)], fill=200, width=1)
-        ld.line([fpt(720, Dd, 0), fpt(720, Dd, 560)], fill=200, width=1)
-    lines = to_f(lg)
-    wall_col = np.array([0.06, 0.05, 0.045])
-    img += (masks["lwall"] + masks["rwall"])[..., None] * wall_col * conc * (1 - 0.25 * lines[..., None])
-    img += masks["ceil"][..., None] * np.array([0.035, 0.03, 0.027]) * conc
-    # polished concrete floor with board seams toward the window
-    seams = Image.new("L", (RW, RH), 0)
-    sd = ImageDraw.Draw(seams)
-    for X in range(-700, 720, 140):
-        sd.line([fpt(X, 0), fpt(X, 1)], fill=160, width=1)
-    for Dd in (0.15, 0.4, 0.7):
-        sd.line([fpt(-720, Dd), fpt(720, Dd)], fill=120, width=1)
-    img += masks["floor"][..., None] * np.array([0.045, 0.04, 0.038]) * conc * (1 - 0.3 * to_f(seams)[..., None])
-    # window header + sill (concrete) frame the glass
-    d2 = Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8))
+    tex = (0.8 + 0.4 * noise)[..., None]
+    img = (masks["lwall"] + masks["rwall"])[..., None] * np.array([0.016, 0.018, 0.026]) * tex
+    img += masks["ceil"][..., None] * np.array([0.01, 0.011, 0.016]) * tex
+    img += masks["floor"][..., None] * np.array([0.012, 0.013, 0.019]) * tex
+    # window frame: header and sill, catching a sliver of neon
+    d2 = to_u8(img)
     dd = ImageDraw.Draw(d2)
-    dd.rectangle([wl - 4, wt - 16, wr + 4, wt + 2], fill=(14, 12, 11))
-    dd.rectangle([wl - 4, wb - 2, wr + 4, wb + 8], fill=(18, 15, 13))
-    # bookshelf on the left wall, kitchen counter + under-cabinet light on the right
-    for h in (120, 230, 340):
-        dd.polygon([fpt(-720, 0.25, h), fpt(-720, 0.75, h), fpt(-700, 0.75, h - 6), fpt(-700, 0.25, h - 6)], fill=(28, 22, 18))
-    rngb = np.random.default_rng(4)
-    for h in (126, 236, 346):
-        Dd = 0.27
-        while Dd < 0.72:
-            w_ = rngb.uniform(0.012, 0.03)
-            bh = rngb.uniform(50, 80)
-            c = tuple(int(v) for v in rngb.integers(20, 70, 3))
-            dd.polygon([fpt(-718, Dd, h), fpt(-718, Dd + w_, h), fpt(-718, Dd + w_, h + bh), fpt(-718, Dd, h + bh)], fill=c)
-            Dd += w_ + rngb.uniform(0.0, 0.006)
-    dd.polygon([fpt(720, 0.02, 0), fpt(720, 0.45, 0), fpt(720, 0.45, 260), fpt(720, 0.02, 260)], fill=(18, 14, 12))
-    dd.polygon([fpt(720, 0.02, 262), fpt(720, 0.45, 262), fpt(720, 0.45, 270), fpt(720, 0.02, 270)], fill=(50, 38, 28))
-    dd.polygon([fpt(720, 0.02, 400), fpt(720, 0.45, 400), fpt(720, 0.45, 540), fpt(720, 0.02, 540)], fill=(15, 12, 10))
+    dd.rectangle([wl - 6, wt - 14, wr + 6, wt + 2], fill=(6, 7, 10))
+    dd.rectangle([wl - 6, wb - 2, wr + 6, wb + 7], fill=(8, 9, 13))
+    dd.line([(wl - 6, wb - 2), (wr + 6, wb - 2)], fill=(40, 55, 80), width=1)
     base = to_f(d2)
-
-    # light: warm reading lamp pool (left), pendant pool (right), under-cabinet strip
-    lx, ly = fpt(LAMP_X, LAMP_D, 330)
-    lamp = np.exp(-(((xx - lx) / 330) ** 2 + ((yy - ly - 40) / 300) ** 2))[..., None]
-    px, py = fpt(PENDANT_X, PENDANT_D, 380)
-    pend = np.exp(-(((xx - px) / 260) ** 2 + ((yy - py - 160) / 240) ** 2))[..., None]
-    room_mask = (1 - 0.0)  # everything but the window
-    base = base + lamp * np.array([0.45, 0.24, 0.09]) * 0.7 + pend * np.array([0.42, 0.22, 0.08]) * 0.6
-    strip = np.exp(-(((yy - fpt(720, 0.2, 395)[1]) / 5) ** 2)) * (xx > 1300)
-    base += strip[..., None] * np.array([0.6, 0.35, 0.15]) * 0.5
-    # window stays empty in the plate (city composited per frame)
     win = np.zeros((RH, RW), np.float32)
     win[wt:wb, wl:wr] = 1
     base = base * (1 - win[..., None])
 
-    # ---- furniture layers (RGBA) ------------------------------------------
     def layer():
         im = Image.new("RGBA", (RW, RH), (0, 0, 0, 0))
         return im, ImageDraw.Draw(im)
 
+    DARK = (7, 8, 12, 255)
+    DARK2 = (10, 11, 16, 255)
     far, fd = layer()
-    # rug and low coffee table in the living zone
-    fd.polygon([fpt(-640, 0.62), fpt(-200, 0.62), fpt(-200, 0.95), fpt(-640, 0.95)], fill=(46, 22, 18, 255))
-    fd.polygon([fpt(-620, 0.64), fpt(-220, 0.64), fpt(-220, 0.93), fpt(-620, 0.93)], outline=(70, 40, 28, 255))
-    fd.polygon(top_face(-540, -300, 0.72, 0.82, 110), fill=(34, 26, 20, 255))
-    fd.polygon(box_side(-540, -300, 0.72, 0.82, 92, 110), fill=(20, 15, 12, 255))
+    # living zone: rug, coffee table, sofa under the glass, reading lamp
+    fd.polygon([fpt(-640, 0.62), fpt(-200, 0.62), fpt(-200, 0.95), fpt(-640, 0.95)], fill=(16, 9, 12, 255))
+    fd.polygon(top_face(-540, -300, 0.72, 0.82, 0.4 * M), fill=DARK2)
+    fd.polygon(box_side(-540, -300, 0.72, 0.82, 0.34 * M, 0.4 * M), fill=DARK)
     for X in (-530, -310):
-        fd.polygon(box_side(X, X + 10, 0.72, 0.72, 0, 92), fill=(16, 12, 10, 255))
-    fd.polygon(top_face(-470, -420, 0.75, 0.79, 113), fill=(120, 30, 30, 255))  # a book left on it
-    # sofa under the window: back against the glass, facing the room
-    S0, S1 = -640, -250
-    fd.polygon(box_side(S0, S1, 0.95, 0.95, 100, 210), fill=(26, 19, 15, 255))  # backrest
-    fd.polygon(top_face(S0, S1, 0.86, 0.95, 100), fill=(38, 28, 22, 255))  # seat
-    fd.polygon(box_side(S0, S1, 0.86, 0.86, 20, 100), fill=(22, 16, 13, 255))  # seat front
-    fd.line([fpt(S0, 0.86, 100), fpt(S1, 0.86, 100)], fill=(70, 50, 36, 255), width=2)
-    fd.line([fpt(S0, 0.95, 210), fpt(S1, 0.95, 210)], fill=(60, 44, 34, 255), width=2)
-    fd.line([fpt((S0 + S1) / 2, 0.86, 22), fpt((S0 + S1) / 2, 0.86, 98)], fill=(16, 12, 10, 255), width=2)
-    for X in (S0 - 30, S1):
-        fd.polygon(box_side(X, X + 30, 0.86, 0.95, 20, 150), fill=(22, 16, 13, 255))  # arms
-        fd.polygon(top_face(X, X + 30, 0.86, 0.95, 150), fill=(40, 30, 24, 255))
-    # reading lamp by the sofa
-    fd.line([fpt(LAMP_X, LAMP_D, 0), fpt(LAMP_X, LAMP_D, 300)], fill=(30, 26, 22, 255), width=4)
-    bx, by = fpt(LAMP_X, LAMP_D, 0)
-    fd.ellipse([bx - 18, by - 5, bx + 18, by + 3], fill=(22, 18, 15, 255))
+        fd.polygon(box_side(X, X + 10, 0.72, 0.72, 0, 0.34 * M), fill=DARK)
+    fd.polygon(top_face(-470, -420, 0.75, 0.79, 0.41 * M), fill=(60, 14, 18, 255))  # a book left out
+    S0, S1_ = -640, -250
+    fd.polygon(box_side(S0, S1_, 0.95, 0.95, 0.42 * M, 0.78 * M), fill=DARK2)
+    fd.polygon(top_face(S0, S1_, 0.86, 0.95, 0.42 * M), fill=DARK2)
+    fd.polygon(box_side(S0, S1_, 0.86, 0.86, 0.08 * M, 0.42 * M), fill=DARK)
+    for X in (S0 - 30, S1_):
+        fd.polygon(box_side(X, X + 30, 0.86, 0.95, 0.08 * M, 0.6 * M), fill=DARK)
+    fd.line([fpt(LAMP_X, LAMP_D, 0), fpt(LAMP_X, LAMP_D, 1.45 * M)], fill=DARK, width=3)
     near, nd = layer()
-    # dining zone: table, two chairs, wine bottle, the pendant
-    T0, T1, TD0, TD1 = 300, 620, 0.46, 0.6
-    TH = 215
-    # chairs at the two ends, seen side-on: seat, back, legs
+    # dining zone: table, chairs at the ends, a bottle, the pendant cord
+    T0, T1, TD0, TD1 = 300, 640, 0.44, 0.58
+    TH = 0.75 * M
     for X, flip in ((T0 - 70, -1), (T1 + 25, 1)):
         Xb = X + (45 if flip > 0 else 0)
-        nd.polygon(top_face(X, X + 45, 0.5, 0.56, 130), fill=(30, 22, 17, 255))
-        nd.polygon(box_side(Xb, Xb + 6, 0.5, 0.5, 130, 265), fill=(22, 16, 13, 255))
-        nd.line([fpt(Xb + 3, 0.5, 265), fpt(Xb + 3, 0.5, 130)], fill=(60, 42, 30, 255), width=1)
+        nd.polygon(top_face(X, X + 45, 0.48, 0.54, 0.46 * M), fill=DARK2)
+        nd.polygon(box_side(Xb, Xb + 6, 0.48, 0.48, 0.46 * M, 0.95 * M), fill=DARK)
         for XX in (X + 2, X + 40):
-            nd.polygon(box_side(XX, XX + 5, 0.5, 0.5, 0, 130), fill=(16, 12, 10, 255))
-    nd.polygon(top_face(T0, T1, TD0, TD1, TH), fill=(44, 32, 22, 255))
-    nd.polygon(box_side(T0, T1, TD0, TD0, TH - 14, TH), fill=(30, 22, 16, 255))
-    nd.line([fpt(T0, TD0, TH), fpt(T1, TD0, TH)], fill=(130, 80, 44, 255), width=2)
+            nd.polygon(box_side(XX, XX + 5, 0.48, 0.48, 0, 0.46 * M), fill=DARK)
+    nd.polygon(top_face(T0, T1, TD0, TD1, TH), fill=DARK2)
+    nd.polygon(box_side(T0, T1, TD0, TD0, TH - 12, TH), fill=DARK)
     for X in (T0 + 10, T1 - 24):
-        nd.polygon(box_side(X, X + 14, TD0, TD0, 0, TH - 14), fill=(20, 15, 12, 255))
-    nd.polygon(box_side(540, 556, 0.53, 0.53, TH, TH + 90), fill=(14, 22, 16, 255))
-    nd.polygon(box_side(544, 552, 0.53, 0.53, TH + 90, TH + 120), fill=(14, 22, 16, 255))
-    nd.line([fpt(554, 0.53, TH + 8), fpt(554, 0.53, TH + 80)], fill=(80, 110, 90, 255), width=1)
-    nd.line([fpt(PENDANT_X, PENDANT_D, 560), fpt(PENDANT_X, PENDANT_D, 400)], fill=(20, 17, 15, 255), width=2)
-    far_a = to_f(far)
-    near_a = to_f(near)
-    # warm light lands on the furniture tops nearest the lamps
+        nd.polygon(box_side(X, X + 14, TD0, TD0, 0, TH - 12), fill=DARK)
+    nd.polygon(box_side(560, 576, 0.5, 0.5, TH, TH + 0.3 * M), fill=(6, 12, 9, 255))
+    nd.polygon(box_side(564, 572, 0.5, 0.5, TH + 0.3 * M, TH + 0.42 * M), fill=(6, 12, 9, 255))
+    cord_top = fpt(PENDANT_X, PENDANT_D, FL + CL)
+    nd.line([cord_top, fpt(PENDANT_X, PENDANT_D, 1.55 * M)], fill=DARK, width=2)
+    far_a, near_a = to_f(far), to_f(near)
+    # rim light: top/upper edges of every silhouette catch the city glow
     for L in (far_a, near_a):
-        lit = 0.8 + 0.9 * (lamp[..., 0] * 0.8 + pend[..., 0])
-        L[..., :3] *= lit[..., None]
-    # emissive shades
+        a = L[..., 3]
+        up = np.clip(a - np.roll(a, 2, axis=0), 0, 1)  # edges facing up
+        side = np.abs(a - np.roll(a, 2, axis=1))
+        neon = np.where((xx < VPX)[..., None], np.array([0.25, 0.75, 1.0]), np.array([1.0, 0.3, 0.75]))
+        L[..., :3] += (up * 0.5 + side * 0.25)[..., None] * neon * 0.35
+    # small warm practicals (just accents, like the amber rims in the rooftop film)
     e = Image.new("RGB", (RW, RH))
     ed = ImageDraw.Draw(e)
-    ax, ay = fpt(LAMP_X, LAMP_D, 300)
-    ed.polygon([(ax - 22, ay - 30), (ax + 22, ay - 30), (ax + 30, ay + 8), (ax - 30, ay + 8)], fill=(255, 190, 120))
-    qx, qy = fpt(PENDANT_X, PENDANT_D, 400)
-    ed.polygon([(qx - 12, qy - 12), (qx + 12, qy - 12), (qx + 40, qy + 18), (qx - 40, qy + 18)], fill=(255, 175, 100))
-    emis = to_f(e.filter(ImageFilter.GaussianBlur(1.2))) * 1.4
-    cone = np.clip(1 - np.abs(xx - qx) / (40 + (yy - qy) * 0.5), 0, 1) * ((yy > qy + 18) & (yy < fpt(0, 0.5, 215)[1]))
-    base += (cone ** 2)[..., None] * np.array([0.08, 0.05, 0.025])
+    ax, ay = fpt(LAMP_X, LAMP_D, 1.45 * M)
+    ed.polygon([(ax - 14, ay - 18), (ax + 14, ay - 18), (ax + 19, ay + 4), (ax - 19, ay + 4)], fill=(255, 180, 110))
+    qx, qy = fpt(PENDANT_X, PENDANT_D, 1.55 * M)
+    ed.polygon([(qx - 8, qy - 8), (qx + 8, qy - 8), (qx + 26, qy + 12), (qx - 26, qy + 12)], fill=(255, 170, 100))
+    emis = to_f(e.filter(ImageFilter.GaussianBlur(1.0))) * 1.3
+    pools = (np.exp(-(((xx - ax) / 120) ** 2 + ((yy - ay - 60) / 140) ** 2)) * 0.5
+             + np.exp(-(((xx - qx) / 110) ** 2 + ((yy - qy - 90) / 120) ** 2)) * 0.45)
+    base += pools[..., None] * np.array([0.22, 0.11, 0.04]) * (1 - win[..., None])
+    for L in (far_a, near_a):
+        L[..., :3] += (pools[..., None] * np.array([0.18, 0.09, 0.03])) * (L[..., 3:4] > 0)
     return base, far_a, near_a, emis, masks
 
 
@@ -476,7 +427,7 @@ def build_room():
 def man_shapes(t, tilt, breathe, sway, hand_lift):
     s = scale_at(MAN["D"])
     fx, fy = fpt(MAN["X"], MAN["D"])
-    u = 520 / 240 * s
+    u = H_MAN / 240 * s
     P = lambda x, y: (fx + x * u, fy + y * u)
     chest_up = breathe * 1.2
     hip = P(sway * 0.6, -112)
@@ -527,8 +478,8 @@ def man_shapes(t, tilt, breathe, sway, hand_lift):
     for side in (-1, 1):
         ex, ey = rot([(head_c[0] + side * 15 * u, head_c[1] + 2 * u)], head_c, tilt)[0]
         out["skin"].append(("ell", (ex, ey, 2.2 * u, 4 * u)))
-    hair = [(-16, 6), (-16.5, -6), (-14, -15), (-8, -21), (0, -23), (8, -21.5), (14.5, -15), (16.5, -6), (16, 6), (12, 12), (5, 14),
-            (-5, 14), (-12, 12)]
+    hair = [(-16, 8), (-16.5, -6), (-14, -15), (-8, -21), (0, -23), (8, -21.5), (14.5, -15), (16.5, -6), (16, 8), (12, 15), (5, 17),
+            (-5, 17), (-12, 15)]
     out["hair"].append(("poly", rot([(head_c[0] + x * u, head_c[1] + y * u) for x, y in hair], head_c, tilt)))
     joints = dict(head=head_c, sh_l=sh_l, sh_r=sh_r, el_l=el_l, hand_r=hand_r,
                   neck_l=rot([(head_c[0] - 10 * u, head_c[1] + 14 * u)], head_c, tilt)[0], u=u)
@@ -813,7 +764,7 @@ class Scene:
         u = mj["u"]
         if name in ("beside", "beside2"):
             Dh = 0.86
-            s = 0.93 * 520 * scale_at(Dh) / 260
+            s = 0.93 * H_MAN * scale_at(Dh) / 260
             fx, fy = fpt(-58, Dh)
             if name == "beside":
                 rest = lerp2(mj["sh_l"], (mj["sh_l"][0] + 6 * u, mj["sh_l"][1] - 2 * u), 0.5 + 0.5 * math.sin(lt * 1.3))
@@ -833,16 +784,16 @@ class Scene:
             return shapes, [], (fx, fy - 140 * s), Dh
         if name == "sofa":
             Dh = 0.905
-            s = 0.93 * 520 * scale_at(Dh) / 260
-            hx, hy = fpt(-610, Dh, 100)
+            s = 0.93 * H_MAN * scale_at(Dh) / 260
+            hx, hy = fpt(-610, Dh, 0.42 * M)
             page = (lt - 2.3) / 0.6
             look_up = smooth(4.4, 4.9, lt) * (1 - smooth(5.3, 5.6, lt))
             shapes, book, _ = her_sitting(hx, hy, s, t, page, look_up)
             return shapes, book, (hx + 20 * s, hy - 60 * s), Dh
         # at the dining table, facing him, swirling the glass
         Dh = 0.72
-        s = 0.93 * 520 * scale_at(Dh) / 260
-        fx, fy = fpt(430, Dh)
+        s = 0.93 * H_MAN * scale_at(Dh) / 260
+        fx, fy = fpt(470, Dh)
         ang = lt * 2 * math.pi / 1.15
         sw = smooth(0.4, 1.0, lt)
         hand = (fx + 26 * s + 5 * s * math.cos(ang) * sw, fy - 152 * s + 2.5 * s * math.sin(ang) * sw)
@@ -923,10 +874,10 @@ class Scene:
         col += masks["pants"][..., None] * np.array([0.022, 0.02, 0.022]) * knit[..., None]
         col += masks["shoe"][..., None] * np.array([0.015, 0.013, 0.012])
         col += masks["hair"][..., None] * np.array([0.02, 0.016, 0.013]) * (0.7 + 0.6 * self.knit)[..., None]
-        col += masks["skin"][..., None] * np.array([0.09, 0.06, 0.05])
+        col += masks["skin"][..., None] * np.array([0.035, 0.027, 0.024])  # seen from behind, in silhouette
         # warm fill from the reading lamp behind-left of the camera
         lamp_side = np.clip(0.6 - (self.rxx - hx) / 140, 0.05, 1)
-        col += alpha[..., None] * (lamp_side * 0.35)[..., None] * np.array([0.12, 0.06, 0.025])
+        col += alpha[..., None] * (lamp_side * 0.15)[..., None] * np.array([0.12, 0.06, 0.025])
         # cool / magenta rim from the city behind him
         edge = to_f(to_u8(alpha).filter(ImageFilter.FIND_EDGES).filter(ImageFilter.GaussianBlur(1.0)))
         rimc = np.array([0.45, 0.55, 0.85]) + 0.3 * np.array([0.6, -0.3, 0.1]) * (self.rxx > hx)[..., None]
@@ -993,9 +944,9 @@ class Scene:
         # city through the window (parallax with the camera), rain falling out there
         drift = 220 + (ccx - 720) * 0.9 + 30 * smooth(10, 40, t)
         city = self.city.render(t, drift, rng)
-        city += rain_streaks(t, 1.0, inten, self.rain_seeds, bright=0.3)
+        city += rain_streaks(t, 1.0, inten, self.rain_seeds, bright=0.42)
         ww, wh = wr - wl, wb - wt
-        cimg = to_f(to_u8(city).resize((ww, wh), Image.BICUBIC, box=(60, 70, 1220, 640)))
+        cimg = to_f(to_u8(city).resize((ww, wh), Image.BICUBIC, box=(20, 60, 1260, 640)))
         img = self.room.copy()
         img[wt:wb, wl:wr] = cimg
 
@@ -1066,7 +1017,7 @@ class Scene:
         rows = np.arange(nref)
         src_rows = np.clip(wb - 1 - (rows * 1.6).astype(np.int32), 0, RH - 1)
         refl = blur(img[src_rows], 3.0)
-        fade = (np.linspace(0.32, 0.05, nref)[:, None, None]) * fl[wb:, :, None]
+        fade = (np.linspace(0.5, 0.12, nref)[:, None, None]) * fl[wb:, :, None]
         img[wb:] = img[wb:] + refl * fade
 
         # near furniture (dining zone), then whoever is at the table
@@ -1101,12 +1052,12 @@ class Scene:
         small = to_u8(bright).resize((W // 4, H // 4), Image.BILINEAR)
         b1 = to_f(small.filter(ImageFilter.GaussianBlur(3)).resize((W, H), Image.BILINEAR))
         b2 = to_f(small.filter(ImageFilter.GaussianBlur(12)).resize((W, H), Image.BILINEAR))
-        img = img + b1 * 0.65 + b2 * 0.85
+        img = img + b1 * 0.7 + b2 * 0.9
         lum = img.mean(axis=2, keepdims=True)
-        warm = smooth(T_CUT, T_IN, t)  # exterior keeps the teal/amber of the city; inside goes K-apartment amber
+        warm = 0.0  # same grade as the rooftop film throughout
         img = img + (1 - np.clip(lum * 3, 0, 1)) * np.array([-0.008, 0.008, 0.02]) + np.clip(lum - 0.4, 0, 1) * np.array([0.06, 0.02, -0.04]) * (1 + warm * 0.5)
         img = lum + (img - lum) * (1 - 0.1 * warm)
-        img = 1 - np.exp(-img * 1.65)
+        img = 1 - np.exp(-img * 1.6)
         img[..., 0] = np.roll(img[..., 0], 1, axis=1)
         img[..., 2] = np.roll(img[..., 2], -1, axis=1)
         img = img * self.vignette + self.grain[i % 8][..., None] * 0.022
