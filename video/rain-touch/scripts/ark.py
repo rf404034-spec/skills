@@ -39,7 +39,7 @@ APPROVED = OUT / "approved"
 LOG = OUT / "log.jsonl"
 
 BASE_URL = os.environ.get("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
-IMAGE_MODEL = os.environ.get("ARK_IMAGE_MODEL", "doubao-seedream-4-0-250828")
+IMAGE_MODEL = os.environ.get("ARK_IMAGE_MODEL", "doubao-seedream-5-0-pro-260628")
 
 # Rough RMB prices for the spend log; check the Ark console for real ones.
 PRICE_IMAGE = float(os.environ.get("ARK_PRICE_IMAGE", "0.25"))  # per image

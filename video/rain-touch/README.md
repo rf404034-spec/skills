@@ -60,7 +60,7 @@ K 站在巨大的落地窗前發呆，窗外下著雨。一個全息虛影在房
 | `ARK_API_KEY`          | 方舟 API Key（用 Network secret 時不用填）                  |
 | `ARK_VIDEO_MODEL`      | Seedance 2.0 的模型 ID 或接入點 ID                          |
 | `ARK_VIDEO_MODEL_FAST` | Seedance 2.0 Mini 的模型 ID 或接入點 ID                     |
-| `ARK_IMAGE_MODEL`      | Seedream 的模型 ID（不填就用 `doubao-seedream-4-0-250828`） |
+| `ARK_IMAGE_MODEL`      | Seedream 的模型 ID（不填就用 `doubao-seedream-5-0-pro-260628`） |
 
 設定好之後開一個新對話，告訴 Claude「繼續做 `video/rain-touch`，從第 2 步開始」。
 
