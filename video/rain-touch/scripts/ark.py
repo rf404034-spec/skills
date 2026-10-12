@@ -13,7 +13,8 @@ from ../shots.json. Standard library only.
   python3 scripts/ark.py cost                  # spend so far
 
 Environment:
-  ARK_API_KEY           required
+  ARK_API_KEY           optional when the key is stored as a Network secret for
+                        ark.cn-beijing.volces.com (the proxy adds the header)
   ARK_IMAGE_MODEL       Seedream model / endpoint id (default below)
   ARK_VIDEO_MODEL       Seedance 2.0 model / endpoint id (required for video)
   ARK_VIDEO_MODEL_FAST  Seedance 2.0 Mini model / endpoint id (for --fast)
@@ -81,20 +82,22 @@ def approved_path(target):
 
 
 def api(method, path, body=None):
+    headers = {"Content-Type": "application/json"}
     key = os.environ.get("ARK_API_KEY")
-    if not key:
-        sys.exit("ARK_API_KEY is not set")
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
     req = urllib.request.Request(
         f"{BASE_URL}{path}",
         method=method,
         data=json.dumps(body).encode() if body is not None else None,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(req, timeout=300) as resp:
             return json.load(resp)
     except urllib.error.HTTPError as e:
-        sys.exit(f"HTTP {e.code}: {e.read().decode(errors='replace')}")
+        hint = "" if e.code != 401 else " (no API key: set ARK_API_KEY or a Network secret for this host)"
+        sys.exit(f"HTTP {e.code}{hint}: {e.read().decode(errors='replace')}")
 
 
 def download(url, dest):
