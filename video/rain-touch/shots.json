@@ -11,9 +11,9 @@
       "prompt": "Character reference sheet, front view, side view and back view of the same person, original character, man in his early 30s, short dark blond hair, stoic tired expression, pale skin, wearing a long dark grey trench coat with a shearling collar, dark high-neck sweater, soft cinematic lighting, neutral grey background, photorealistic, not resembling any real actor"
     },
     "holo": {
-      "name": "全息虛影（原創角色）",
+      "name": "全息虛影（原創角色，造型參考《贖罪》塞西莉亞）",
       "size": "2048x2048",
-      "prompt": "Character reference sheet, front view, side view and back view of the same person, original character, young woman, short black bob haircut, gentle sad smile, translucent holographic body, soft blue-violet glow, faint horizontal scanlines, slightly see-through, simple white dress, neutral dark background, photorealistic, not resembling any real actress"
+      "prompt": "Photorealistic full-body character reference sheet on a plain dark grey studio background, no text or labels, front, side profile and back views of the same woman. Original character in her late twenties, tall and slender, elegant long-limbed proportions, long graceful neck, poised upright posture, dark brown hair in a short softly waved 1930s bob, floor-length backless emerald green bias-cut silk evening gown with thin straps, translucent hologram with a soft inner glow, faint horizontal scanlines and a subtle digital shimmer at her edges, quiet longing melancholic expression, cinematic soft lighting, not resembling any real actress"
     },
     "room": {
       "name": "房間參考（無人）",
@@ -53,7 +53,7 @@
       "style": "interior",
       "refs": ["k", "holo", "room"],
       "glitch_in": true,
-      "image_prompt": "Medium wide shot from behind the man standing at the window, in the background by the small cluttered kitchen counter a translucent glowing holographic young woman stands, soft blue-violet glow, faint scanlines",
+      "image_prompt": "Medium wide shot from behind the man standing at the window, in the background by the small cluttered kitchen counter a translucent glowing holographic woman in a backless emerald green silk gown stands, soft green-white glow, faint scanlines",
       "video_prompt": "Static shot, the holographic woman flickers into existence with digital distortion, glitches, then vanishes; the man does not turn around"
     },
     {
@@ -62,7 +62,7 @@
       "style": "interior",
       "refs": ["k", "holo"],
       "glitch_in": true,
-      "image_prompt": "Medium shot, the translucent holographic woman stands beside the man at the rainy window, her fingertips lightly touching his shoulder, he keeps staring outside, her blue-violet glow on his coat",
+      "image_prompt": "Medium shot, the translucent holographic woman stands beside the man at the rainy window, her fingertips lightly touching his shoulder, he keeps staring outside, her soft green glow on his coat",
       "video_prompt": "Static shot, she slowly reaches out and her fingertips rest on his shoulder, her body faintly flickering, he does not react"
     },
     {
@@ -70,7 +70,7 @@
       "duration": 4,
       "style": "interior",
       "refs": [],
-      "image_prompt": "Extreme close-up of a man's hand pressed flat against a cold rain-covered window, a translucent glowing blue-violet hand gently placed over it, the glowing fingers slightly passing through his, blurred neon city beyond",
+      "image_prompt": "Extreme close-up of a man's hand pressed flat against a cold rain-covered window, a translucent softly glowing hand gently placed over it, the glowing fingers slightly passing through his, blurred neon city beyond",
       "video_prompt": "Static macro shot, the glowing translucent hand slowly lowers onto his hand and sinks through it with a soft digital shimmer, raindrops run down the glass"
     },
     {
@@ -79,7 +79,7 @@
       "style": "interior",
       "refs": ["k", "holo", "room"],
       "glitch_in": true,
-      "image_prompt": "Wide shot from the back of the room, the man at the window in silhouette, a translucent holographic woman sitting on the worn sofa on the left",
+      "image_prompt": "Wide shot from the back of the room, the man at the window in silhouette, a translucent holographic woman in an emerald green gown sitting on the worn sofa on the left",
       "video_prompt": "Static shot, the holographic woman flashes on the sofa for a moment with glitch distortion and disappears, the man remains still"
     },
     {
@@ -88,7 +88,7 @@
       "style": "interior",
       "refs": ["k", "holo"],
       "glitch_in": true,
-      "image_prompt": "Close-up, the holographic woman stands behind the man, her glowing hand caressing his cheek, her blue-violet light illuminating his face, his eyes half closed, tender and melancholic",
+      "image_prompt": "Close-up, the holographic woman stands behind the man, her glowing hand caressing his cheek, her soft green-white light illuminating his face, his eyes half closed, tender and melancholic",
       "video_prompt": "Very slow push in, her hand gently strokes his cheek, he slowly closes his eyes, her glow pulses softly"
     },
     {
