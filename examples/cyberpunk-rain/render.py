@@ -1,7 +1,9 @@
 """Procedural cyberpunk rain scene: a detective in a long coat and his
 holographic AI companion on a wet rooftop, in a neon megacity at night.
-She holds an umbrella over him while she stands in the rain herself; every
-drop that passes through her makes the hologram spark and flicker.
+They walk in, stop, and she holds an umbrella over him while she stands in the
+rain herself; every drop that passes through her makes the hologram spark and
+flicker. The camera pushes in, cuts to close-ups, then pulls back to wide as
+they walk away together.
 
 Inspired by the mood of Blade Runner 2049. Pure numpy + Pillow, encoded with
 ffmpeg. Techniques follow the skills found via `skills find`:
@@ -24,7 +26,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 W, H = 1280, 720
 FPS = 24
-DUR = 22.0
+DUR = 28.0
 NFRAMES = int(FPS * DUR)
 BAR = 92  # letterbox bars (~2.39:1)
 HORIZON = 520  # rooftop edge / start of wet reflective floor
@@ -154,17 +156,6 @@ def hologram_ad(width):
 # Characters
 # ----------------------------------------------------------------------------
 
-def detective_poly(fx, fy, s=1.0):
-    """Long coat with turned-up collar, seen 3/4 from behind. Feet at (fx, fy)."""
-    P = lambda pts: [(fx + x * s, fy + y * s) for x, y in pts]
-    coat = P([(-30, -228), (-46, -214), (-50, -150), (-52, -60), (-56, -38), (-20, -34),
-              (-14, -40), (14, -40), (22, -34), (54, -38), (50, -70), (48, -150), (44, -214), (28, -228)])
-    collar = P([(-26, -236), (-30, -222), (26, -222), (22, -240), (12, -246), (-14, -246)])
-    legs = [P([(-20, -36), (-6, -36), (-6, 0), (-22, 0)]), P([(6, -36), (20, -36), (22, 0), (6, 0)])]
-    head = (fx - 14 * s, fy - 270 * s, fx + 14 * s, fy - 236 * s)
-    return coat, collar, legs, head
-
-
 def ik(sh, target, l1, l2):
     """Two-bone IK; returns the elbow, bending downward/outward."""
     dx, dy = target[0] - sh[0], target[1] - sh[1]
@@ -173,40 +164,6 @@ def ik(sh, target, l1, l2):
     alpha = math.acos(max(-1.0, min(1.0, (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d))))
     cands = [(sh[0] + l1 * math.cos(base + k * alpha), sh[1] + l1 * math.sin(base + k * alpha)) for k in (1, -1)]
     return max(cands, key=lambda p: p[1] + 0.3 * p[0])
-
-
-def companion_mask(fx, fy, elbow, hand, s=1.0):
-    """Holographic companion facing left; front arm posed in world coords."""
-    S = 2
-    w, h = 240, 340
-    img = Image.new("L", (w * S, h * S), 0)
-    d = ImageDraw.Draw(img)
-    ox, oy = 130, 330  # feet inside the local canvas
-
-    def P(pts):
-        return [((ox + x * s) * S, (oy + y * s) * S) for x, y in pts]
-
-    def Pw(pts):
-        return [((ox + x - fx) * S, (oy + y - fy) * S) for x, y in pts]
-
-    d.ellipse([(ox - 12 * s) * S, (oy - 252 * s) * S, (ox + 12 * s) * S, (oy - 222 * s) * S], fill=255)
-    d.polygon(P([(-15, -244), (-13, -256), (0, -260), (14, -254), (16, -232), (10, -226), (8, -244)]), fill=255)
-    d.polygon(P([(-5, -224), (5, -224), (6, -212), (-6, -212)]), fill=255)
-    # dress
-    d.polygon(P([(-22, -212), (22, -212), (18, -150), (14, -120), (30, -40), (-30, -40), (-14, -120), (-18, -150)]),
-              fill=255)
-    d.polygon(P([(-14, -42), (-4, -42), (-6, 0), (-13, 0)]), fill=255)
-    d.polygon(P([(4, -42), (14, -42), (13, 0), (6, 0)]), fill=255)
-    # back arm, resting
-    d.line(P([(18, -206), (24, -150), (20, -110)]), fill=255, width=int(7 * s * S), joint="curve")
-    # front arm, holding the umbrella
-    sh = (fx - 18 * s, fy - 206 * s)
-    d.line(Pw([sh, elbow, hand]), fill=255, width=int(7 * s * S), joint="curve")
-    r = 5 * s * S
-    hx, hy = Pw([hand])[0]
-    d.ellipse([hx - r, hy - r, hx + r, hy + r], fill=255)
-    img = img.resize((w, h), Image.LANCZOS)
-    return np.asarray(img, dtype=np.float32) / 255.0, (int(fx - ox), int(fy - oy))
 
 
 def umbrella_geom(hand, lift, opened):
@@ -241,6 +198,109 @@ def umbrella_geom(hand, lift, opened):
     return poly, (hand[0], hand[1] + 12), apex, tips, (wp(-R, hgt), wp(R, hgt))
 
 
+def rot(pts, pivot, ang):
+    c, s_ = math.cos(ang), math.sin(ang)
+    return [(pivot[0] + (x - pivot[0]) * c - (y - pivot[1]) * s_, pivot[1] + (x - pivot[0]) * s_ + (y - pivot[1]) * c)
+            for x, y in pts]
+
+
+def detective_shapes(fx, fy, phase, amp):
+    """Long coat, collar up, seen 3/4 from behind; walk cycle via phase/amp.
+
+    Returns world-space shapes: ("poly", pts) | ("ell", (cx, cy, rx, ry))."""
+    fy = fy - 2.5 * amp * abs(math.sin(phase))
+    sway = 4 * amp * math.sin(phase)
+    P = lambda pts: [(fx + x + (sway * (y + 60) / 30 if y > -60 else 0), fy + y) for x, y in pts]
+    coat = P([(-30, -228), (-46, -214), (-50, -150), (-52, -60), (-56, -38), (-20, -34),
+              (-14, -40), (14, -40), (22, -34), (54, -38), (50, -70), (48, -150), (44, -214), (28, -228)])
+    collar = P([(-26, -236), (-30, -222), (26, -222), (22, -240), (12, -246), (-14, -246)])
+    swing = 0.38 * amp * math.sin(phase)
+    legs = [rot([(fx + a, fy + b) for a, b in [(-20, -40), (-6, -40), (-6, 0), (-22, 0)]], (fx - 13, fy - 40), swing),
+            rot([(fx + a, fy + b) for a, b in [(6, -40), (20, -40), (22, 0), (6, 0)]], (fx + 13, fy - 40), -swing)]
+    shapes = [("poly", coat), ("poly", collar)] + [("poly", leg) for leg in legs]
+    shapes.append(("ell", (fx, fy - 253, 14, 17)))
+    return shapes
+
+
+def companion_shapes(fx, fy, phase, amp, elbow, hand, s):
+    """Holographic companion facing right/left in profile; front arm in world coords."""
+    fy = fy - 2 * amp * abs(math.sin(phase))
+    P = lambda pts: [(fx + x * s, fy + y * s) for x, y in pts]
+    sway = 3 * amp * math.sin(phase)
+    shapes = [
+        ("ell", (fx, fy - 237 * s, 12 * s, 15 * s)),
+        ("poly", P([(-15, -244), (-13, -256), (0, -260), (14, -254), (16, -232), (10, -226), (8, -244)])),
+        ("poly", P([(-5, -224), (5, -224), (6, -212), (-6, -212)])),
+        ("poly", P([(-22, -212), (22, -212), (18, -150), (14, -120), (30 + sway, -40), (-30 + sway, -40), (-14, -120), (-18, -150)])),
+    ]
+    swing = 0.42 * amp * math.sin(phase)
+    for leg, piv, sg in (([(-14, -42), (-4, -42), (-6, 0), (-13, 0)], (-9, -42), swing),
+                         ([(4, -42), (14, -42), (13, 0), (6, 0)], (9, -42), -swing)):
+        shapes.append(("poly", rot(P(leg), P([piv])[0], sg)))
+    bsw = 8 * amp * math.sin(phase + math.pi)
+    shapes.append(("line", P([(18, -206), (24 + bsw * 0.5, -150), (20 + bsw, -110)]), 7 * s))
+    sh = (fx - 18 * s, fy - 206 * s)
+    shapes.append(("line", [sh, elbow, hand], 7 * s))
+    shapes.append(("ell", (hand[0], hand[1], 5 * s, 5 * s)))
+    return shapes
+
+
+# ----------------------------------------------------------------------------
+# Choreography: walking, camera moves and cuts
+# ----------------------------------------------------------------------------
+
+V_WALK = 36.0  # px/s
+STRIDE = 42.0  # px per half cycle
+
+
+def walk_speed(t):
+    return V_WALK * (1 - smooth(5.8, 7.0, t)) + V_WALK * 0.85 * smooth(19.2, 20.4, t)
+
+
+_TG = np.arange(0, DUR + 1, 1 / 240)
+_XG = 290 + np.cumsum([walk_speed(x) for x in _TG]) / 240
+
+
+def motion(t):
+    """K's world x, walk phase and walk amplitude at time t."""
+    x = float(np.interp(t, _TG, _XG))
+    phase = (x - 290) / STRIDE * math.pi
+    return x, phase, min(1.0, walk_speed(t) / V_WALK * 1.3)
+
+
+def camera(t):
+    """(zoom, centre x, centre y) in world coords; hard cuts between shots."""
+    kx, _, _ = motion(t)
+    fy = HORIZON + 46
+    pair = kx + 60
+    if t < 6.5:  # wide establishing, gentle push, following the walk
+        z = 1.0 + 0.1 * smooth(0, 6.5, t)
+        cx, cy = 640 + (pair - 640) * 0.3, 380
+    elif t < 12.8:  # push in to a medium two-shot while she raises the umbrella
+        u = smooth(6.5, 10.5, t)
+        z = 1.1 + 0.75 * u
+        cx = 640 + (pair - 640) * 0.3 + (pair - 640 - (pair - 640) * 0.3) * u
+        cy = 380 + (fy - 175 - 380) * u
+    elif t < 15.6:  # cut: close-up on him under the umbrella
+        u = (t - 12.8) / 2.8
+        z = 2.7 + 0.2 * u
+        cx, cy = kx + 18 - 6 * u, fy - 262 + 4 * u
+    elif t < 19.0:  # cut: close-up on her face, rain flickering through her
+        u = (t - 15.6) / 3.4
+        z = 3.0 + 0.25 * u
+        cx, cy = kx + 118 + 5 * u, fy - 218
+    else:  # cut: medium, then a long pull back to wide as they walk away
+        u = smooth(19.0, 25.5, t)
+        z = 1.9 - 0.9 * u
+        cx = pair + (640 - pair) * u
+        cy = fy - 180 + (380 - (fy - 180)) * u
+    # subtle handheld drift
+    cx += 2.0 * math.sin(t * 0.9) * z
+    cy += 1.2 * math.sin(t * 1.3 + 1) * z
+    hw, hh = W / (2 * z), H / (2 * z)
+    return z, min(max(cx, hw), W - hw), min(max(cy, hh), H - hh)
+
+
 # ----------------------------------------------------------------------------
 # Renderer
 # ----------------------------------------------------------------------------
@@ -257,23 +317,23 @@ class Scene:
             building_layer(rng, 60, 200, HORIZON + 20, (0.015, 0.02, 0.03), 0.12, 0.08, 0.5, LW) + (0.7,),
         ]
         self.ad_mask, self.ad_edge = hologram_ad(LW)
-        # rain particles in normalised space: x, y, depth
+        # rain particles in normalised screen space: x, y, depth
         n = 2200
         self.rain = np.stack([rng.uniform(-0.2, 1.2, n), rng.uniform(0, 1, n), rng.uniform(0.15, 1, n)], 1)
         self.rain_speed = rng.uniform(0.9, 1.3, n)
-        self.splash_rng_seed = SEED + 7
         self.grain = rng.normal(0, 1, (8, H, W)).astype(np.float32)
         yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
         r = np.sqrt(((xx - W / 2) / (W / 2)) ** 2 + ((yy - H / 2) / (H / 2)) ** 2)
         self.vignette = np.clip(1.15 - 0.55 * r ** 1.8, 0.2, 1)[..., None].astype(np.float32)
         self.xx, self.yy = xx, yy
 
-    # -- spinner flying through the frame --
-    def spinner(self, d, glow, t, cam):
-        if not (5.0 < t < 15.0):
+    # -- spinner flying through the frame (world coords) --
+    def spinner(self, d, glow, t, drift):
+        t0, t1 = 18.5, 27.5
+        if not (t0 < t < t1):
             return
-        u = (t - 5.0) / 10.0
-        x = -120 + u * (W + 300) - cam * 0.5
+        u = (t - t0) / (t1 - t0)
+        x = -120 + u * (W + 300) - drift * 0.5
         y = 250 - 70 * u + 12 * math.sin(u * 7)
         s = 0.9 + 0.3 * u
         body = [(x - 34 * s, y), (x - 20 * s, y - 9 * s), (x + 20 * s, y - 10 * s), (x + 40 * s, y - 2 * s),
@@ -285,15 +345,12 @@ class Scene:
             glow.ellipse([x - 36 * s, y - 2 * s, x - 30 * s, y + 4 * s], fill=(255, 30, 30))
         glow.line([(x - 28 * s, y + 7 * s), (x + 30 * s, y + 6 * s)], fill=(30, 180, 255), width=2)
 
-    def frame(self, i):
-        t = i / FPS
-        rng = np.random.default_rng(1000 + i)
-        cam = 260 * smooth(0, DUR, t)  # slow lateral drift
+    def background(self, t, rng, cx):
+        """Sky, city, giant ad, spinner and rooftop in world coords (W x H)."""
+        drift = 120 + 200 * smooth(0, DUR, t) + (cx - 640) * 0.8
         img = self.sky[:, :W].copy()
-
-        # city layers with parallax; giant ad sits on the middle layer
         for li, (rgb, a, par) in enumerate(self.layers):
-            off = int(cam * par)
+            off = int(min(max(drift * par, 0), 600))
             img = img * (1 - a[:, off:off + W]) + rgb[:, off:off + W] * a[:, off:off + W]
             if li == 1:
                 adx = 880 - off
@@ -309,170 +366,186 @@ class Scene:
                 hue = 0.5 + 0.5 * math.sin(t * 0.6)
                 c1 = np.array([1.0, 0.25, 0.7]) * (1 - hue) + np.array([0.3, 0.6, 1.0]) * hue
                 img += (m * 0.42 * scan + e * 1.1)[..., None] * c1 * flick
-                # ad casts light into the rain haze
                 img += (np.clip(1 - np.abs(self.xx - (adx + 120)) / 380, 0, 1) ** 2 * 0.06)[..., None] * c1
-
-        # atmosphere: fog band over the horizon
         fogb = np.exp(-((self.yy - (HORIZON - 30)) / 120) ** 2)[..., None] * 0.18
         img = img * (1 - fogb) + FOG * fogb
-
         pil = Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8))
         glow_layer = Image.new("RGB", (W, H), (0, 0, 0))
         d = ImageDraw.Draw(pil)
-        g = ImageDraw.Draw(glow_layer)
-        self.spinner(d, g, t, cam)
-
-        # rooftop ledge
+        self.spinner(d, ImageDraw.Draw(glow_layer), t, drift)
         d.rectangle([0, HORIZON, W, H], fill=(6, 7, 10))
-        img = np.asarray(pil, dtype=np.float32) / 255.0 + np.asarray(glow_layer, dtype=np.float32) / 255.0
+        return Image.fromarray(np.minimum(np.asarray(pil, np.int16) + np.asarray(glow_layer, np.int16), 255).astype(np.uint8))
 
-        # characters
-        kx = 560 - cam * 0.9 * 0.25
+    def frame(self, i):
+        t = i / FPS
+        rng = np.random.default_rng(1000 + i)
+        z, ccx, ccy = camera(t)
+        S = 2
+
+        def to_s(p):
+            return ((p[0] - ccx) * z + W / 2, (p[1] - ccy) * z + H / 2)
+
+        def raster(shapes):
+            m = Image.new("L", (W * S, H * S), 0)
+            d = ImageDraw.Draw(m)
+            for sh in shapes:
+                if sh[0] == "poly":
+                    d.polygon([(x * S, y * S) for x, y in map(to_s, sh[1])], fill=255)
+                elif sh[0] == "ell":
+                    cx_, cy_, rx, ry = sh[1]
+                    x_, y_ = to_s((cx_, cy_))
+                    d.ellipse([(x_ - rx * z) * S, (y_ - ry * z) * S, (x_ + rx * z) * S, (y_ + ry * z) * S], fill=255)
+                elif sh[0] == "line":
+                    pts = [(x * S, y * S) for x, y in map(to_s, sh[1])]
+                    wdt = max(1, int(sh[2] * z * S))
+                    d.line(pts, fill=255, width=wdt, joint="curve")
+                    for x, y in (pts[0], pts[-1]):
+                        d.ellipse([x - wdt / 2, y - wdt / 2, x + wdt / 2, y + wdt / 2], fill=255)
+            return m.resize((W, H), Image.LANCZOS)
+
+        # background: world image cropped by the camera, defocused when zoomed in
+        bg = self.background(t, rng, ccx)
+        hw, hh = W / (2 * z), H / (2 * z)
+        box = (max(0.0, ccx - hw), max(0.0, ccy - hh), min(float(W), ccx + hw), min(float(H), ccy + hh))
+        bg = bg.resize((W, H), Image.BICUBIC, box=box)
+        if z > 1.15:
+            bg = bg.filter(ImageFilter.GaussianBlur((z - 1) * 1.8))
+        img = np.asarray(bg, dtype=np.float32) / 255.0
+
+        # choreography
+        kx, phase, amp = motion(t)
         fy = HORIZON + 46
         cs = 0.92
-        comp_x = kx + 122  # she stands outside the umbrella, in the rain
-        coat, collar, legs, head = detective_poly(kx, fy)
+        comp_x = kx + 122  # she walks/stands outside the umbrella, in the rain
         holo_col = np.array([0.55, 0.45, 1.0]) * (0.5 + 0.5 * math.sin(t * 0.8)) + np.array([0.2, 0.85, 1.0]) * (0.5 - 0.5 * math.sin(t * 0.8))
-
-        # her arm swings the umbrella up (3.5-7.5s), then it opens (7.5-9.3s)
-        lift = smooth(3.5, 7.5, t)
-        opened = smooth(7.5, 9.3, t)
-        sh = (comp_x - 18 * cs, fy + 4 - 206 * cs)
-        down = (sh[0] - 4, sh[1] + 86)
-        up = (kx + 46, fy - 254 + 2 * math.sin(t * 1.3))
-        target = (down[0] + (up[0] - down[0]) * lift, down[1] + (up[1] - down[1]) * lift - 40 * math.sin(math.pi * lift))
-        elbow = ik(sh, target, 48 * cs + 4, 46 * cs + 4)
-        hand = target
-        cm, (cox, coy) = companion_mask(comp_x, fy + 4, elbow, hand, cs)
+        lift = smooth(8.3, 10.8, t)
+        opened = smooth(10.8, 12.3, t)
+        hphase = phase + 0.9
+        hbob = 2 * amp * abs(math.sin(hphase))
+        sh = (comp_x - 18 * cs, fy + 4 - hbob - 206 * cs)
+        down = (sh[0] - 4 + 6 * amp * math.sin(hphase) * (1 - lift), sh[1] + 86)
+        up = (kx + 46, fy - 254 + 2 * math.sin(t * 1.3) - 2.5 * amp * abs(math.sin(phase)))
+        hand = (down[0] + (up[0] - down[0]) * lift, down[1] + (up[1] - down[1]) * lift - 40 * math.sin(math.pi * lift))
+        elbow = ik(sh, hand, 48 * cs + 4, 46 * cs + 4)
         canopy, grip, apex, tips, (rimL, rimR) = umbrella_geom(hand, lift, opened)
+        canopy_s = [to_s(p) for p in canopy]
+        rimL_s, rimR_s, apex_s = to_s(rimL), to_s(rimR), to_s(apex)
+        kx_s, _ = to_s((kx, fy))
+        comp_s = to_s((comp_x, fy - 120))
+        hs = int(round(to_s((0, HORIZON))[1]))  # screen row of the rooftop edge
 
-        S = 2
-        km = Image.new("L", (W * S, H * S), 0)
-        kd = ImageDraw.Draw(km)
-        sc = lambda pts: [(x * S, y * S) for x, y in pts]
-        kd.polygon(sc(coat), fill=255)
-        kd.polygon(sc(collar), fill=255)
-        for leg in legs:
-            kd.polygon(sc(leg), fill=255)
-        kd.ellipse([v * S for v in head], fill=255)
-        km = km.resize((W, H), Image.LANCZOS)
+        # him
+        km = raster(detective_shapes(kx, fy, phase, amp))
         kmask = np.asarray(km, dtype=np.float32)[..., None] / 255.0
-        # rim light from the hologram (right side) and the city (left)
         kedge = np.asarray(km.filter(ImageFilter.FIND_EDGES), dtype=np.float32)[..., None] / 255.0
-        side = np.clip((self.xx - kx) / 40, -1, 1)[..., None]
+        side = (self.xx - kx_s)[..., None]
         rim = kedge * (np.where(side > 0, 1.0, 0.0) * holo_col * 1.3 + np.where(side <= 0, 1.0, 0.0) * np.array([1.0, 0.55, 0.25]) * 0.35)
         figure_col = np.array([0.025, 0.028, 0.035])
         img = img * (1 - kmask) + figure_col * kmask + rim
 
-        # rain layer (built before her, so drops can disturb the hologram)
+        # rain layer in screen space (built before her so drops can disturb the hologram)
         rain = Image.new("L", (W, H), 0)
         rd = ImageDraw.Draw(rain)
         wind = -0.12
-        for (x, y, z), sp in zip(self.rain, self.rain_speed):
-            yy = (y + t * sp * (0.9 + z * 1.4)) % 1.0
-            px = (x + wind * yy * z + t * wind * 0.4) * W
+        for (x, y, dz), sp in zip(self.rain, self.rain_speed):
+            yy = (y + t * sp * (0.9 + dz * 1.4)) % 1.0
+            px = (x + wind * yy * dz + t * wind * 0.4) * W
             py = yy * (H + 80) - 40
-            L = 8 + 34 * z
-            b = int(40 + 150 * z)
-            rd.line([(px, py), (px + wind * L, py + L)], fill=b, width=1 if z < 0.75 else 2)
-        for _ in range(70):  # splashes on the floor
-            sx = rng.uniform(0, W)
-            sy = rng.uniform(HORIZON + 4, H - BAR + 20)
-            r = rng.uniform(1.5, 4.5)
-            rd.ellipse([sx - r * 2.2, sy - r * 0.5, sx + r * 2.2, sy + r * 0.5], outline=int(rng.uniform(70, 160)))
-        # the open umbrella keeps the rain off him: mask its shelter
+            L = (8 + 34 * dz) * z ** 0.5  # close-ups: rain nearer the lens reads bigger
+            rd.line([(px, py), (px + wind * L, py + L)], fill=int(40 + 150 * dz), width=1 if dz * z ** 0.5 < 0.75 else 2)
+        if hs < H:  # splashes on the wet floor
+            for _ in range(int(70 * (H - hs) / 200)):
+                sx = rng.uniform(0, W)
+                sy = rng.uniform(hs + 4, H - BAR + 20)
+                r = rng.uniform(1.5, 4.5) * z ** 0.5
+                rd.ellipse([sx - r * 2.2, sy - r * 0.5, sx + r * 2.2, sy + r * 0.5], outline=int(rng.uniform(70, 160)))
         shelter = Image.new("L", (W, H), 0)
         if opened > 0.05:
             sd = ImageDraw.Draw(shelter)
             drop = lambda p: (p[0] + wind * (H - p[1]), H)
-            sd.polygon(canopy, fill=255)
-            sd.polygon([rimL, rimR, drop(rimR), drop(rimL)], fill=int(255 * opened))
+            sd.polygon(canopy_s, fill=255)
+            sd.polygon([rimL_s, rimR_s, drop(rimR_s), drop(rimL_s)], fill=int(255 * opened))
             shelter = shelter.filter(ImageFilter.GaussianBlur(3))
         shelter_a = np.asarray(shelter, dtype=np.float32) / 255.0
         rain_a = np.asarray(rain.filter(ImageFilter.GaussianBlur(0.6)), dtype=np.float32) / 255.0 * (1 - shelter_a)
 
-        # drips running off the umbrella's rib tips + drops bursting on the canopy
+        # drips off the outer rib tips + drops bursting on the canopy
         drip = Image.new("L", (W, H), 0)
         dd = ImageDraw.Draw(drip)
         if opened > 0.6:
-            for k, (tx, ty) in enumerate(tips[:2] + tips[-2:]):  # outer ribs only
+            feet_s = to_s((0, fy + 4))[1]
+            for k, tip in enumerate(tips[:2] + tips[-2:]):
+                tx, ty = to_s(tip)
                 for ph in (0.0, 0.37, 0.71):
                     u = (t * (1.3 + 0.17 * k) + ph + k * 0.13) % 1.0
-                    fall = u * u * (fy + 4 - ty)
+                    fall = u * u * (feet_s - ty)
                     dx = wind * fall
-                    dd.line([(tx + dx, ty + fall), (tx + dx + wind * 6, ty + fall + 6 + 14 * u)], fill=int(220 * opened), width=2)
-            topn = len(canopy) // 2
+                    dd.line([(tx + dx, ty + fall), (tx + dx + wind * 6 * z, ty + fall + (6 + 14 * u) * z ** 0.7)],
+                            fill=int(220 * opened), width=max(2, int(1.5 * z ** 0.7)))
+            topn = len(canopy_s) // 2
             for _ in range(18):
-                px, py = canopy[int(rng.integers(0, topn))]
-                rr = rng.uniform(1, 2.5)
+                px, py = canopy_s[int(rng.integers(0, topn))]
+                rr = rng.uniform(1, 2.5) * z ** 0.6
                 dd.ellipse([px - rr, py - rr - 1, px + rr, py + rr - 1], fill=int(rng.uniform(120, 255)))
         drip_a = np.asarray(drip.filter(ImageFilter.GaussianBlur(0.7)), dtype=np.float32) / 255.0
 
-        # companion hologram (additive, translucent, scanlines) disturbed by the rain
-        hh, ww = cm.shape
-        comp = np.zeros((H, W), np.float32)
-        y0, x0 = max(coy, 0), max(cox, 0)
-        y1, x1 = min(coy + hh, H), min(cox + ww, W)
-        comp[y0:y1, x0:x1] = cm[y0 - coy:y1 - coy, x0 - cox:x1 - cox]
+        # her: additive translucent hologram, disturbed wherever rain passes through
+        comp_img = raster(companion_shapes(comp_x, fy + 4, hphase, amp, elbow, hand, cs))
+        comp = np.asarray(comp_img, dtype=np.float32) / 255.0
         hit = rain_a * comp
         hit_img = Image.fromarray((np.clip(hit * 255, 0, 255)).astype(np.uint8))
         hitb = np.asarray(hit_img.filter(ImageFilter.GaussianBlur(3)), dtype=np.float32) / 255.0
-        # rows struck by drops tear sideways
         rows = np.where(hitb.sum(axis=1) > 0.6)[0]
-        for _ in range(min(len(rows), int(rng.integers(3, 9)))):
-            gy, gh = int(rng.choice(rows)), int(rng.integers(2, 6))
-            comp[gy:gy + gh] = np.roll(comp[gy:gy + gh], int(rng.choice([-1, 1]) * rng.integers(2, 9)), 1)
-        if rng.random() < 0.12:  # larger glitch slice
-            gy, gh = int(rng.integers(y0, y1 - 12)), int(rng.integers(3, 12))
-            comp[gy:gy + gh] = np.roll(comp[gy:gy + gh], int(rng.integers(-16, 16)), 1)
-        # whole-body flicker: steady shimmer plus irregular blink-outs from the rain
+        if len(rows):
+            for _ in range(int(rng.integers(3, 9))):
+                gy, gh = int(rng.choice(rows)), int(rng.integers(2, 6) * z ** 0.6)
+                comp[gy:gy + gh] = np.roll(comp[gy:gy + gh], int(rng.choice([-1, 1]) * rng.integers(2, 9) * z ** 0.7), 1)
+        ys = np.where(comp.max(axis=1) > 0)[0]
+        if len(ys) > 14 and rng.random() < 0.12:  # larger glitch slice
+            gy, gh = int(rng.integers(ys[0], ys[-1] - 12)), int(rng.integers(3, 12) * z ** 0.6)
+            comp[gy:gy + gh] = np.roll(comp[gy:gy + gh], int(rng.integers(-16, 16) * z ** 0.7), 1)
         flick = 0.85 + 0.12 * math.sin(t * 21)
         if rng.random() < 0.28:
             flick *= rng.uniform(0.3, 0.7)
         elif rng.random() < 0.08:
             flick *= 1.35
-        scan = 0.65 + 0.35 * (np.sin((self.yy + t * 30) * 1.4) > -0.2)
+        scan = 0.65 + 0.35 * (np.sin((self.yy + t * 30 * z) * 1.4 / max(1.0, z * 0.6)) > -0.2)
         comp_img = Image.fromarray((comp * 255).astype(np.uint8))
-        halo = np.asarray(comp_img.filter(ImageFilter.GaussianBlur(10)), dtype=np.float32) / 255.0
+        halo = np.asarray(comp_img.filter(ImageFilter.GaussianBlur(10 * z ** 0.7)), dtype=np.float32) / 255.0
         cedge = np.asarray(comp_img.filter(ImageFilter.FIND_EDGES), dtype=np.float32) / 255.0
-        vert = np.clip((self.yy - (fy - 240)) / 260, 0, 1)  # brighter at the face
-        holes = 1 - np.clip(hitb * 6, 0, 0.9)  # drops punch dark gaps through her
+        face_y = to_s((0, fy - 240))[1]
+        vert = np.clip((self.yy - face_y) / (260 * z), 0, 1)
+        holes = 1 - np.clip(hitb * 6, 0, 0.9)
         body = comp * scan * (0.55 - 0.25 * vert) * holes
         sparks = np.clip(hit * 2.5 + hitb * 1.5, 0, 1.2)
         img = img * (1 - comp[..., None] * 0.35) + ((body + cedge * 0.8 * holes)[..., None] * holo_col + halo[..., None] * holo_col * 0.45) * flick
         img += sparks[..., None] * (np.array([0.85, 0.95, 1.0]) * 0.6 + holo_col * 0.6)
-        # she lights his coat, the umbrella's underside and the floor
-        light = np.exp(-(((self.xx - comp_x) / 140) ** 2 + ((self.yy - (fy - 120)) / 180) ** 2))[..., None]
+        light = np.exp(-(((self.xx - comp_s[0]) / (140 * z)) ** 2 + ((self.yy - comp_s[1]) / (180 * z)) ** 2))[..., None]
         img += light * holo_col * 0.07 * flick
 
-        # the umbrella itself (physical, dark, rim-lit)
-        um = Image.new("L", (W * S, H * S), 0)
-        ud = ImageDraw.Draw(um)
-        ud.polygon(sc(canopy), fill=255)
-        ud.line(sc([grip, apex]), fill=255, width=2 * S)
-        ud.arc([(grip[0] - 6) * S, (grip[1] - 4) * S, (grip[0] + 2) * S, (grip[1] + 6) * S], 0, 180, fill=255, width=2 * S)
-        um = um.resize((W, H), Image.LANCZOS)
+        # the umbrella (physical, dark, rim-lit by her glow underneath)
+        hook = [grip, (grip[0] - 1, grip[1] + 4), (grip[0] - 4, grip[1] + 6), (grip[0] - 6, grip[1] + 3)]
+        um = raster([("poly", canopy), ("line", [grip, apex], 2), ("line", hook, 2)])
         umask = np.asarray(um, dtype=np.float32)[..., None] / 255.0
         uedge = np.asarray(um.filter(ImageFilter.FIND_EDGES), dtype=np.float32)[..., None] / 255.0
-        under = np.clip((self.yy - apex[1]) / 60, 0, 1)[..., None]  # lower rim catches her glow
+        under = np.clip((self.yy - apex_s[1]) / (60 * z), 0, 1)[..., None]
         urim = uedge * (holo_col * 1.4 * under * flick + np.array([1.0, 0.6, 0.35]) * 0.5 * (1 - under))
         img = img * (1 - umask * 0.97) + np.array([0.02, 0.022, 0.03]) * umask + urim
 
-        # wet floor reflection with ripples
-        top = img[:HORIZON]
-        nref = H - HORIZON
-        src_rows = HORIZON - 1 - np.arange(nref)
-        ripple = (np.sin(np.arange(nref)[:, None] * 0.35 + t * 6 + self.xx[0][None, :] * 0.02) * (2 + np.arange(nref)[:, None] * 0.03)).astype(np.int32)
-        cols = np.clip(self.xx[0][None, :].astype(np.int32) + ripple, 0, W - 1)
-        refl = top[src_rows[:, None], cols]
-        refl_img = Image.fromarray((np.clip(refl, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(2.2))
-        refl = np.asarray(refl_img, dtype=np.float32) / 255.0
-        fade = np.linspace(0.55, 0.25, nref)[:, None, None]
-        img[HORIZON:] = img[HORIZON:] * (1 - fade) + refl * fade + np.array([0.01, 0.012, 0.016])
-        # figures stand on the floor: redraw their lower parts over the reflection boundary
-        img[HORIZON:] = img[HORIZON:] * (1 - kmask[HORIZON:]) + (figure_col * kmask[HORIZON:] + rim[HORIZON:])
+        # wet floor reflection below the rooftop edge (when it is on screen)
+        if 0 < hs < H:
+            nref = H - hs
+            src_rows = np.clip(hs - 1 - (np.arange(nref) / 1.0).astype(int), 0, H - 1)
+            k = np.arange(nref)[:, None]
+            ripple = (np.sin(k * 0.35 / z + t * 6 + self.xx[0][None, :] * 0.02 / z) * (2 + k * 0.03) * z ** 0.5).astype(np.int32)
+            cols = np.clip(self.xx[0][None, :].astype(np.int32) + ripple, 0, W - 1)
+            refl = img[src_rows[:, None], cols]
+            refl_img = Image.fromarray((np.clip(refl, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(2.2 * z ** 0.5))
+            refl = np.asarray(refl_img, dtype=np.float32) / 255.0
+            fade = np.linspace(0.55, 0.25, nref)[:, None, None]
+            img[hs:] = img[hs:] * (1 - fade) + refl * fade + np.array([0.01, 0.012, 0.016])
+            img[hs:] = img[hs:] * (1 - kmask[hs:]) + (figure_col * kmask[hs:] + rim[hs:])
 
-        # rain on top
         rain_tint = np.array([0.62, 0.72, 0.85]) + light * holo_col * 2.0
         img = img + rain_a[..., None] * rain_tint * 0.42 + drip_a[..., None] * (np.array([0.7, 0.8, 0.95]) * 0.5 + holo_col * 0.4)
 
@@ -489,21 +562,11 @@ class Scene:
         img = img + (1 - np.clip(lum * 3, 0, 1)) * np.array([-0.01, 0.012, 0.025]) + np.clip(lum - 0.5, 0, 1) * np.array([0.06, 0.02, -0.04])
         img = 1 - np.exp(-img * 1.6)
 
-        # slow push-in
-        z = 1.0 + 0.07 * smooth(0, DUR, t)
-        out = Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8))
-        if z > 1.0005:
-            cw, ch = W / z, H / z
-            ox, oy = (W - cw) * (0.5 + 0.3 * smooth(0, DUR, t)), (H - ch) * 0.6
-            out = out.resize((W, H), Image.BICUBIC, box=(ox, oy, ox + cw, oy + ch))
-        img = np.asarray(out, dtype=np.float32) / 255.0
-
         # chromatic aberration, grain, vignette
         img[..., 0] = np.roll(img[..., 0], 2, axis=1)
         img[..., 2] = np.roll(img[..., 2], -2, axis=1)
         img = img * self.vignette + self.grain[i % 8][..., None] * 0.022
 
-        # title cards
         fade = smooth(0, 2.5, t) * (1 - smooth(DUR - 2.0, DUR, t))
         img *= fade
         out = Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8))
@@ -515,22 +578,22 @@ class Scene:
         return out.tobytes()
 
     def title(self, dr, t):
-        a = smooth(1.5, 3.5, t) * (1 - smooth(5.5, 7.0, t))
+        a = smooth(1.5, 3.0, t) * (1 - smooth(4.8, 6.0, t))
         if a <= 0:
             return
         f = ImageFont.truetype(FONT, 34)
         txt = "L O S   A N G E L E S   ·   2 0 4 9"
         w = dr.textlength(txt, font=f)
-        dr.text(((W - w) / 2, 300), txt, font=f, fill=tuple(int(255 * a * c) for c in (0.95, 0.75, 0.55)))
+        dr.text(((W - w) / 2, 200), txt, font=f, fill=tuple(int(255 * a * c) for c in (0.95, 0.75, 0.55)))
 
     def subtitle(self, dr, t):
         lines = [
-            (10.5, 13.5, "“You’re standing in the rain.”"),
-            (14.5, 18.5, "“It can’t hurt me. I just want you to stay dry.”"),
+            (13.0, 15.5, "“You’re standing in the rain.”"),
+            (15.8, 18.9, "“It can’t hurt me. I just want you to stay dry.”"),
         ]
         f = ImageFont.truetype(FONT, 22)
         for s, e, txt in lines:
-            a = smooth(s, s + 0.5, t) * (1 - smooth(e - 0.5, e, t))
+            a = smooth(s, s + 0.4, t) * (1 - smooth(e - 0.4, e, t))
             if a > 0:
                 w = dr.textlength(txt, font=f)
                 dr.text(((W - w) / 2, H - BAR + 32), txt, font=f, fill=(int(230 * a), int(220 * a), int(200 * a)))
@@ -550,7 +613,7 @@ def _render(i):
 
 # ----------------------------------------------------------------------------
 # Audio: rain bed, synth pad drone, low "braam" swell, spinner fly-by,
-# umbrella pop + canopy drumming, hologram crackle
+# umbrella pop + canopy drumming, hologram crackle, footsteps
 # ----------------------------------------------------------------------------
 
 def onepole(x, cutoff, sr):
@@ -601,22 +664,22 @@ def synth_audio(path):
     br *= benv * 0.22
 
     # spinner fly-by 5..15s: bandpassed noise sweeping, panned L->R
-    u = np.clip((t - 5) / 10, 0, 1)
-    fly_env = np.exp(-((t - 10.0) / 2.6) ** 2)
+    u = np.clip((t - 18.5) / 9, 0, 1)
+    fly_env = np.exp(-((t - 23.0) / 2.6) ** 2)
     hum = np.sin(2 * np.pi * (180 - 60 * u) * t) * 0.3 + (onepole(noise, 2000, sr) - onepole(noise, 500, sr))
     fly = hum * fly_env * 0.35
 
     # sparse piano-like high notes (sine bells) when she reaches out
     bells = np.zeros(n)
-    for start, f in ((9.0, 587.33), (11.0, 698.46), (13.0, 880.0), (15.5, 659.25), (18.0, 587.33)):
+    for start, f in ((9.0, 587.33), (11.6, 698.46), (13.0, 880.0), (15.8, 659.25), (19.2, 587.33), (22.5, 523.25)):
         m = t >= start
         tt = t[m] - start
         bells[m] += (np.sin(2 * np.pi * f * tt) + 0.3 * np.sin(4 * np.pi * f * tt)) * np.exp(-tt / 2.2) * 0.07
 
-    # umbrella snapping open (~8.2s), then rain drumming on its canopy
-    pop = np.exp(-((t - 8.2) / 0.12) ** 2) * (onepole(noise, 1200, sr) - onepole(noise, 200, sr)) * 1.4
+    # umbrella snapping open (~11.4s), then rain drumming on its canopy
+    pop = np.exp(-((t - 11.4) / 0.12) ** 2) * (onepole(noise, 1200, sr) - onepole(noise, 200, sr)) * 1.4
     drum = np.zeros(n)
-    idx = rng.integers(int(9.0 * sr), n - 400, 1800)
+    idx = rng.integers(int(12.0 * sr), n - 400, 1800)
     drum[idx] = rng.uniform(0.3, 1, len(idx))
     drum = np.convolve(drum, np.sin(np.arange(250) * 0.25) * np.exp(-np.arange(250) / 50), mode="same") * 0.05
 
@@ -627,9 +690,17 @@ def synth_audio(path):
         tt = np.arange(ln) / sr
         crackle[k0:k0 + ln] += np.sign(np.sin(2 * np.pi * rng.uniform(800, 3000) * tt)) * rng.uniform(0.01, 0.03)
 
+    # wet footsteps synced to the walk cycle
+    steps = np.zeros(n)
+    half = np.floor((np.interp(t, _TG, _XG) - 290) / STRIDE)
+    for k in np.where(np.diff(half) > 0)[0]:
+        ln = int(0.07 * sr)
+        steps[k:k + ln] += np.exp(-np.arange(len(steps[k:k + ln])) / (0.015 * sr)) * rng.uniform(0.7, 1.0)
+    steps = onepole(steps * rng.normal(0, 1, n), 1400, sr) * 0.5
+
     fade = np.clip(t / 2.0, 0, 1) * np.clip((DUR - t) / 2.0, 0, 1)
-    L = (rain + pad + br + fly * (1 - u) + bells + pop + drum * 0.8 + crackle * 0.6) * fade
-    R = (rain[::-1] * 0.9 + rain * 0.1 + pad + br + fly * u + bells + pop + drum + crackle) * fade
+    L = (steps + rain + pad + br + fly * (1 - u) + bells + pop + drum * 0.8 + crackle * 0.6) * fade
+    R = (steps * 0.9 + rain[::-1] * 0.9 + rain * 0.1 + pad + br + fly * u + bells + pop + drum + crackle) * fade
     st = np.stack([L, R], 1)
     st /= np.abs(st).max() / 0.9
     pcm = (st * 32767).astype(np.int16)
